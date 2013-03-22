@@ -181,8 +181,9 @@ parseCommandLine(MasonFragmentsOptions & options, int argc, char const ** argv)
 
     // Add Examples Section.
     addTextSection(parser, "Examples");
-    addListItem(parser, "\\fBmason_genome\\fP \\fB-l\\fP 1000 \\fB-l\\fP 4000 \\fB-o\\fP \\fIgenome.fa\\fP",
-                "Simulate a genome with two contigs of lengths 1000 and 4000 and write it to genome.fa.");
+    addListItem(parser, "\\fBmason_fragments\\fP \\fB-n\\fP 1000 \\fB-i\\fP \\fIgenome.fa\\fP \\fB-o\\fP \\fIfragments.fa\\fP",
+                "Simulate 1000 fragments of file \\fIgenome.fa\\fP and write them to \\fIfragments.fa\\fP.  The "
+                "fragments will be simulated using the default configuration.");
 
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
@@ -322,6 +323,7 @@ int main(int argc, char const ** argv)
     fragOptions.maxFragmentSize = options.maxFragmentSize;
     fragOptions.meanFragmentSize = options.meanFragmentSize;
     fragOptions.stdDevFragmentSize = options.stdDevFragmentSize;
+    fragOptions.embedSamplingInfo = options.embedSamplingInfo;
 
     FragmentSimulator fragSim(rng, outStream, genome, fragOptions);
 
