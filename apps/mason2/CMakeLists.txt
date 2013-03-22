@@ -18,6 +18,11 @@ message (STATUS "Configuring sandbox/mason2/apps/mason2")
 #set (SEQAN_FIND_DEPENDENCIES NONE)
 find_package (SeqAn REQUIRED)
 
+# Enable C++11 in GCC and/or CLANG.
+if (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
+    add_definitions ("-std=c++0x")
+endif (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
+
 # ----------------------------------------------------------------------------
 # Build Setup
 # ----------------------------------------------------------------------------
@@ -30,9 +35,11 @@ add_definitions (${SEQAN_DEFINITIONS})
 
 # Update the list of file names below if you add source files to your application.
 add_executable (mason_genome mason_genome.cpp simulate_genome.h)
+add_executable (mason_fragments mason_fragments.cpp fragment_generation.h fstream_temp.h)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
+target_link_libraries (mason_fragments ${SEQAN_LIBRARIES})
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
@@ -47,7 +54,7 @@ if (NOT SEQAN_PREFIX_SHARE_DOC)
 endif (NOT SEQAN_PREFIX_SHARE_DOC)
 
 # Install mason2 in ${PREFIX}/bin directory
-install (TARGETS mason_genome
+install (TARGETS mason_genome mason_fragments
          DESTINATION bin)
 
 # Install non-binary files for the package to "." for app builds and

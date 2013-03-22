@@ -57,6 +57,11 @@
 // Class SimulateGenomeOptions
 // ----------------------------------------------------------------------------
 
+// Configuration for simulating genomes.
+//
+// This is separate from the application options of the simulate_genome program to allow simulation from other parts of
+// the program when necessary.
+
 struct SimulateGenomeOptions
 {
     seqan::String<int> contigLengths;
@@ -77,6 +82,10 @@ struct SimulateGenomeOptions
 // ----------------------------------------------------------------------------
 // Function simulateGenome()
 // ----------------------------------------------------------------------------
+
+// Simulate a genome given the simulation options.
+//
+// The resulting sequence is written to stream.
 
 int simulateGenome(seqan::SequenceStream & stream, SimulateGenomeOptions const & options)
 {
@@ -129,6 +138,8 @@ int simulateGenome(seqan::SequenceStream & stream, SimulateGenomeOptions const &
 // ----------------------------------------------------------------------------
 // Function simulateGenome()
 // ----------------------------------------------------------------------------
+
+// Open the file with the given name in a SequenceStream and then call the simulateGenome function from above.
 
 int simulateGenome(char const * filename, SimulateGenomeOptions const & options)
 {

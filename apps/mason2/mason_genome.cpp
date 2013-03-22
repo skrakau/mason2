@@ -92,7 +92,9 @@ parseCommandLine(MasonGenomeOptions & options, int argc, char const ** argv)
 
     // Define usage line and long description.
     addUsageLine(parser, "[\\fIOPTIONS\\fP] [\\fB-l\\fP \\fILEN\\fP]+ \\fB-o\\fP \\fIOUT.fa\\fP");
-    addDescription(parser, "This is the application skelleton and you should modify this string.");
+    addDescription(parser,
+                   "Simulate a random genome to the output file.  For each \\fB-l\\fP/\\fB--contig-length\\fP "
+                   "entry, a contig with the given length will be simulated.");
 
     // We require one argument.
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
