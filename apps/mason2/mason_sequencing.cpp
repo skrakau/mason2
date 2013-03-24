@@ -52,14 +52,7 @@
 
 struct MasonSequencingOptions
 {
-    // The sequencing technology to simulate.
-    enum Technology
-    {
-        ILLUMINA,
-        SANGER,
-        ROCHE_454
-    };
-
+public:
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
 
@@ -74,12 +67,12 @@ struct MasonSequencingOptions
     int seed;
 
     // The selected technology to simulate.
-    Technology technology;
+    SequencingSimulatorFactory::Technology technology;
 
     // The SequencingOptions subclass to use for the configuration.
     std::auto_ptr<SequencingOptions> optionsImpl;
 
-    MasonSequencingOptions() : verbosity(1), seed(0), technology(ILLUMINA)
+    MasonSequencingOptions() : verbosity(1), seed(0), technology(SequencingSimulatorFactory::ILLUMINA)
     {}
 
     // Set technology by creating optionsImpl.
@@ -87,17 +80,17 @@ struct MasonSequencingOptions
     {
         if (str == "illumina")
         {
-            technology = ILLUMINA;
+            technology = SequencingSimulatorFactory::ILLUMINA;
             optionsImpl.reset(new IlluminaSequencingOptions());
         }
         else if (str == "454")
         {
-            technology = ROCHE_454;
+            technology = SequencingSimulatorFactory::ROCHE_454;
             optionsImpl.reset(new Roche454SequencingOptions());
         }
         else
         {
-            technology = SANGER;
+            technology = SequencingSimulatorFactory::SANGER;
             optionsImpl.reset(new SangerSequencingOptions());
         }
     }
@@ -528,59 +521,55 @@ int main(int argc, char const ** argv)
     std::cerr << "\n__PREPARATION________________________________________________________________\n"
               << "\n";
 
-    // // Open reference FAI index.
-    // std::cerr << "Loading reference     " << options.inputFilename << " ...";
-    // seqan::SequenceStream inGenome(toCString(options.inputFilename));
-    // if (!isGood(inGenome))
-    // {
-    //     std::cerr << " ERROR\n"
-    //               << "Could not open " << options.inputFilename << "\n";
-    //     return 1;
-    // }
+    // Open fragments FASTA file.
+    std::cerr << "Opening fragments       " << options.inputFilename << " ...";
+    seqan::SequenceStream inFragments(toCString(options.inputFilename));
+    if (!isGood(inFragments))
+    {
+        std::cerr << " ERROR\n"
+                  << "Could not open " << options.inputFilename << "\n";
+        return 1;
+    }
+    std::cerr << " OK\n";
 
-    // Genome genome;
-    // if (readAll(genome.ids, genome.seqs, inGenome))
-    // {
-    //     std::cerr << " ERROR\n"
-    //               << "Could not load genome.\n";
-    //     return 1;
-    // }
-    // genome.trimIds();
-    // std::cerr << " OK\n";
+    // Open reads output file.
+    std::cerr << "Opening output file (L) " << options.outputFilename << " ...";
+    seqan::SequenceStream outReads(toCString(options.outputFilename), seqan::SequenceStream::WRITE);
+    if (!isGood(outReads))
+    {
+        std::cerr << " ERROR\n"
+                  << "Could not open " << options.outputFilename << "\n";
+        return 1;
+    }
+    std::cerr << " OK\n";
 
-    // // Open output file.
-    // std::cerr << "\nOutput File           " << options.outputFilename << " ...";
-    // seqan::SequenceStream outStream;
-    // open(outStream, toCString(options.outputFilename), seqan::SequenceStream::WRITE, seqan::SequenceStream::FASTA);
-    // if (!isGood(outStream))
-    // {
-    //     std::cerr << "\nERROR: Could not open output file " << options.outputFilename << "\n";
-    //     return 1;
-    // }
-    // std::cerr << " OK\n";
+    // Open output file for the right reads.
+    seqan::SequenceStream outReadsRight;
+    if (!empty(options.outputFilenameRight))
+    {
+        std::cerr << "Opening output file (R) " << options.outputFilenameRight << " ...";
+        open(outReadsRight, toCString(options.outputFilenameRight), seqan::SequenceStream::WRITE);
+        if (!isGood(outReadsRight))
+        {
+            std::cerr << " ERROR\n"
+                      << "Could not open " << options.outputFilenameRight << "\n";
+            return 1;
+        }
+        std::cerr << " OK\n";
+    }
 
-    // // Perform genome simulation.
-    // std::cerr << "\n__SIMULATING FRAGMENTS_______________________________________________________\n"
-    //           << "\n";
+    // Perform genome simulation.
+    std::cerr << "\n__SIMULATING READS___________________________________________________________\n"
+              << "\n"
+              << "Simulating reads ...";
 
-    // TRng rng(options.seed);
+    TRng rng(options.seed);
 
-    // FragmentOptions fragOptions;
-    // fragOptions.model = (options.distribution == MasonFragmentsOptions::NORMAL) ?
-    //         FragmentOptions::NORMAL : FragmentOptions::UNIFORM;
-    // fragOptions.numFragments = options.numFragments;
-    // fragOptions.minFragmentSize = options.minFragmentSize;
-    // fragOptions.maxFragmentSize = options.maxFragmentSize;
-    // fragOptions.meanFragmentSize = options.meanFragmentSize;
-    // fragOptions.stdDevFragmentSize = options.stdDevFragmentSize;
-    // fragOptions.embedSamplingInfo = options.embedSamplingInfo;
+    SequencingSimulatorFactory factory(rng, &outReads, &outReadsRight, &inFragments, *options.optionsImpl, options.technology);
+    std::auto_ptr<SequencingSimulator> sim = factory.make();
 
-    // FragmentSimulator fragSim(rng, outStream, genome, fragOptions);
+    std::cerr << " OK\n";
 
-    // std::cerr << "Simulating Fragments ...";
-    // fragSim.simulate();
-    // std::cerr << " OK\n";
-
-    // std::cerr << "\nDone.\n";    
+    std::cerr << "\nDONE.\n";
     return 0;
 }

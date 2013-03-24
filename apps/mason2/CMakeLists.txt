@@ -19,9 +19,9 @@ message (STATUS "Configuring sandbox/mason2/apps/mason2")
 find_package (SeqAn REQUIRED)
 
 # Enable C++11 in GCC and/or CLANG.
-if (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
-    add_definitions ("-std=c++0x")
-endif (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
+#if (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
+#    add_definitions ("-std=c++0x")
+#endif (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
 
 # ----------------------------------------------------------------------------
 # Build Setup

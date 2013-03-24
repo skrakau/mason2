@@ -469,16 +469,19 @@ public:
     IlluminaSequencingOptions illuminaOptions;
 
     IlluminaSequencingSimulator(TRng & rng,
-                                SequencingOptions const & options,
                                 IlluminaSequencingOptions const & illuminaOptions) :
             SequencingSimulator(rng, options), illuminaOptions(illuminaOptions)
     {}
 
     // Pick read length for the fragment to be simulated.
-    virtual unsigned readLength();
+    virtual unsigned readLength()
+    {
+        return illuminaOptions.readLength;
+    }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand);
+    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
+    {}
 };
 
 // 454 read simulation.
@@ -490,16 +493,17 @@ public:
     Roche454SequencingOptions roche454Options;
 
     Roche454SequencingSimulator(TRng & rng,
-                                SequencingOptions const & options,
                                 Roche454SequencingOptions const & roche454Options) :
             SequencingSimulator(rng, options), roche454Options(roche454Options)
     {}
 
     // Pick read length for the fragment to be simulated.
-    virtual unsigned readLength();
+    virtual unsigned readLength()
+    { return 0; }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand);
+    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
+    {}
 };
 
 // Sanger read simulation.
@@ -511,16 +515,70 @@ public:
     SangerSequencingOptions sangerOptions;
 
     SangerSequencingSimulator(TRng & rng,
-                              SequencingOptions const & options,
                               SangerSequencingOptions const & sangerOptions) :
             SequencingSimulator(rng, options), sangerOptions(sangerOptions)
     {}
 
     // Pick read length for the fragment to be simulated.
-    virtual unsigned readLength();
+    virtual unsigned readLength()
+    { return 0; }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand);
+    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
+    {}
+};
+
+// Factory for SequencingSimulator objects.
+
+class SequencingSimulatorFactory
+{
+public:
+
+    enum Technology
+    {
+        ILLUMINA,
+        SANGER,
+        ROCHE_454
+    };
+
+    TRng & rng;
+
+    seqan::SequenceStream * in;
+    seqan::SequenceStream * out;
+    seqan::SequenceStream * outR;
+
+    SequencingOptions const * options;
+
+    Technology tech;
+
+    SequencingSimulatorFactory(TRng & rng,
+                               seqan::SequenceStream * out,
+                               seqan::SequenceStream * outR,
+                               seqan::SequenceStream * in,
+                               SequencingOptions const & options,
+                               Technology tech) :
+            rng(rng), in(in), out(out), outR(outR), tech(tech), options(&options)
+    {}
+
+    std::auto_ptr<SequencingSimulator> make()
+    {
+        std::auto_ptr<SequencingSimulator> res;
+        
+        switch (tech)
+        {
+            case ILLUMINA:
+                res.reset(new IlluminaSequencingSimulator(rng, *dynamic_cast<IlluminaSequencingOptions const *>(options)));
+                break;
+            case SANGER:
+                res.reset(new SangerSequencingSimulator(rng, *dynamic_cast<SangerSequencingOptions const *>(options)));
+                break;
+            case ROCHE_454:
+                res.reset(new Roche454SequencingSimulator(rng, *dynamic_cast<Roche454SequencingOptions const *>(options)));
+                break;
+        }
+
+        return res;
+    }
 };
 
 // ============================================================================
