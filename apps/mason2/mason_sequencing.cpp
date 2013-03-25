@@ -183,7 +183,7 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setDefaultValue(parser, "technology", "illumina");
 
     addOption(parser, seqan::ArgParseOption("", "mate-orientation", "Orientation for paired reads.  See section Read "
-                                            "Orientation below."));
+                                            "Orientation below.", seqan::ArgParseOption::STRING, "ORIENTATION"));
     setValidValues(parser, "mate-orientation", "FR RF FF FF2");
     setDefaultValue(parser, "mate-orientation", "FR");
 
@@ -544,6 +544,17 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     getOptionValue(tmpTech, parser, "technology");
     options.initTechnology(tmpTech);
 
+    seqan::CharString tmpOrientation;
+    getOptionValue(tmpOrientation, parser, "mate-orientation");
+    if (tmpOrientation == "FR")
+        options.optionsImpl->mateOrientation = SequencingOptions::FORWARD_REVERSE;
+    else if (tmpOrientation == "RF")
+        options.optionsImpl->mateOrientation = SequencingOptions::REVERSE_FORWARD;
+    else if (tmpOrientation == "FF")
+        options.optionsImpl->mateOrientation = SequencingOptions::FORWARD_FORWARD;
+    else if (tmpOrientation == "FF2")
+        options.optionsImpl->mateOrientation = SequencingOptions::FORWARD_FORWARD2;
+
     options.optionsImpl->verbosity = options.verbosity;
     options.optionsImpl->embedReadInfo = isSet(parser, "embed-read-info");
 
@@ -590,7 +601,7 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
         ptr->sqrtInStdDev = !isSet(parser, "454-no-sqrt-in-std-dev");
         getOptionValue(ptr->k, parser, "454-proportionality-factor");
         getOptionValue(ptr->backgroundNoiseMean, parser, "454-background-noise-mean");
-        getOptionValue(ptr->backgroundNoiseMean, parser, "454-background-noise-stddev");
+        getOptionValue(ptr->backgroundNoiseStdDev, parser, "454-background-noise-stddev");
     }
     else  // tmpTech == "sanger"
     {
@@ -759,6 +770,9 @@ int main(int argc, char const ** argv)
                 ssR << ' ';
                 simInfoR.serialize(ssR);
             }
+
+            // std::cerr << seqL << "\t" << qualsL << "\n"
+            //           << seqR << "\t" << qualsR << "\n\n";
 
             if (writeRecord(outReads, ssL.str(), seqL, qualsL) != 0)
             {

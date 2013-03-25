@@ -279,7 +279,7 @@ public:
         {
             ss.str("");
             ss.clear();
-            ss << i;
+            ss << (i + 1);
 
             Fragment frag;
             int rId = _pickContig();
