@@ -56,6 +56,9 @@ public:
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
 
+    // The read name prefix.
+    seqan::CharString readNamePrefix;
+
     // The input file name.
     seqan::CharString inputFilename;
     // The output file name.
@@ -189,6 +192,13 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setValidValues(parser, "strands", "forward reverse both");
     setDefaultValue(parser, "strands", "both");
 
+    addOption(parser, seqan::ArgParseOption("", "embed-read-info", "Whether or not to embed information abou the "
+                                            "sequencing process in the read meta data."));
+
+    addOption(parser, seqan::ArgParseOption("", "read-name-prefix", "Prefix for the read name.",
+                                            seqan::ArgParseOption::STRING, "NAME"));
+    setDefaultValue(parser, "read-name-prefix", "reads.");
+
     // -----------------------------------------------------------------------
     // Illumina Sequencing Options
     // -----------------------------------------------------------------------
@@ -210,9 +220,9 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     addOption(parser, seqan::ArgParseOption("", "illumina-prob-deletion",
                                             "Insert per-base probability for deletion in Illumina sequencing.",
                                             seqan::ArgParseOption::DOUBLE, "PROB"));
-    setMinValue(parser, "illumina-prob-insert", "0");
-    setMaxValue(parser, "illumina-prob-insert", "1");
-    setDefaultValue(parser, "illumina-prob-insert", "0.001");
+    setMinValue(parser, "illumina-prob-deletion", "0");
+    setMaxValue(parser, "illumina-prob-deletion", "1");
+    setDefaultValue(parser, "illumina-prob-deletion", "0.001");
 
     addOption(parser, seqan::ArgParseOption("", "illumina-prob-mismatch-scale",
                                             "Scaling factor for Illumina mismatch probability.",
@@ -315,18 +325,19 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setDefaultValue(parser, "454-read-length-mean", "400");
 
     addOption(parser, seqan::ArgParseOption("", "454-read-length-stddev", "The read length standard deviation when the "
-                                            "read length is sampled uniformly.", seqan::ArgParseOption::DOUBLE, "LEN"));
+                                            "read length is sampled with normal distribution.",
+                                            seqan::ArgParseOption::DOUBLE, "LEN"));
     setMinValue(parser, "454-read-length-stddev", "0");
     setDefaultValue(parser, "454-read-length-stddev", "40");
 
     addOption(parser, seqan::ArgParseOption("", "454-no-sqrt-in-std-dev", "For error model, if set then "
                                             "(sigma = k * r)) is used, otherwise (sigma = k * sqrt(r))."));
 
-    addOption(parser, seqan::ArgParseOption("", "454-k", "Proportionality factor for calculating the standard "
+    addOption(parser, seqan::ArgParseOption("", "454-proportionality-factor", "Proportionality factor for calculating the standard "
                                             "deviation proportional to the read length.",
                                             seqan::ArgParseOption::DOUBLE, "FLOAT"));
-    setMinValue(parser, "454-k", "0");
-    setDefaultValue(parser, "454-k", "0.15");
+    setMinValue(parser, "454-proportionality-factor", "0");
+    setDefaultValue(parser, "454-proportionality-factor", "0.15");
 
     addOption(parser, seqan::ArgParseOption("", "454-background-noise-mean", "Mean of lognormal distribution to use for "
                                             "the noise.", seqan::ArgParseOption::DOUBLE, "MEAN"));
@@ -365,10 +376,10 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setMinValue(parser, "sanger-read-length-mean", "0");
     setDefaultValue(parser, "sanger-read-length-mean", "400");
 
-    addOption(parser, seqan::ArgParseOption("", "sanger-read-length-stddev", "The read length standard deviation when the "
+    addOption(parser, seqan::ArgParseOption("", "sanger-read-length-error", "The read length standard deviation when the "
                                             "read length is sampled uniformly.", seqan::ArgParseOption::DOUBLE, "LEN"));
-    setMinValue(parser, "sanger-read-length-stddev", "0");
-    setDefaultValue(parser, "sanger-read-length-stddev", "40");
+    setMinValue(parser, "sanger-read-length-error", "0");
+    setDefaultValue(parser, "sanger-read-length-error", "40");
 
     addOption(parser, seqan::ArgParseOption("", "sanger-prob-mismatch-scale",
                                             "Scaling factor for Sanger mismatch probability.",
@@ -417,6 +428,46 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setMinValue(parser, "sanger-prob-deletion-end", "0.0");
     setMaxValue(parser, "sanger-prob-deletion-end", "1.0");
     setDefaultValue(parser, "sanger-prob-deletion-end", "0.005");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-match-start-mean",
+                                            "Mean PHRED quality for non-mismatch bases of first base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-match-start-mean", "40.0");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-match-end-mean",
+                                            "Mean PHRED quality for non-mismatch bases of last base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-match-end-mean", "39.5");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-match-start-stddev",
+                                            "Mean PHRED quality for non-mismatch bases of first base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-match-start-stddev", "0.1");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-match-end-stddev",
+                                            "Mean PHRED quality for non-mismatch bases of last base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-match-end-stddev", "2");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-error-start-mean",
+                                            "Mean PHRED quality for errorneous bases of first base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-error-start-mean", "30");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-error-end-mean",
+                                            "Mean PHRED quality for errorneous bases of last base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-error-end-mean", "20");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-error-start-stddev",
+                                            "Mean PHRED quality for errorneous bases of first base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-error-start-stddev", "2");
+
+    addOption(parser, seqan::ArgParseOption("", "sanger-quality-error-end-stddev",
+                                            "Mean PHRED quality for errorneous bases of last base in Sanger sequencing.",
+                                            seqan::ArgParseOption::DOUBLE, "QUAL"));
+    setDefaultValue(parser, "sanger-quality-error-end-stddev", "5");
 
     // -----------------------------------------------------------------------
     // Read Orientation Information
@@ -480,10 +531,85 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     getOptionValue(options.outputFilename, parser, "out-file");
     getOptionValue(options.outputFilenameRight, parser, "out-file-right");
     getOptionValue(options.seed, parser, "seed");
+    getOptionValue(options.readNamePrefix, parser, "read-name-prefix");
 
     seqan::CharString tmpTech;
     getOptionValue(tmpTech, parser, "technology");
     options.initTechnology(tmpTech);
+
+    options.optionsImpl->verbosity = options.verbosity;
+    options.optionsImpl->embedReadInfo = isSet(parser, "embed-read-info");
+
+    if (tmpTech == "illumina")
+    {
+        IlluminaSequencingOptions * ptr = static_cast<IlluminaSequencingOptions *>(options.optionsImpl.get());
+
+        getOptionValue(ptr->readLength, parser, "illumina-read-length");
+
+        getOptionValue(ptr->probabilityInsert, parser, "illumina-prob-insert");
+        getOptionValue(ptr->probabilityDelete, parser, "illumina-prob-deletion");
+
+        getOptionValue(ptr->probabilityMismatchScale, parser, "illumina-prob-mismatch-scale");
+
+        getOptionValue(ptr->probabilityMismatch, parser, "illumina-prob-mismatch");
+        getOptionValue(ptr->probabilityMismatchBegin, parser, "illumina-prob-mismatch-begin");
+        getOptionValue(ptr->probabilityMismatchEnd, parser, "illumina-prob-mismatch-end");
+        getOptionValue(ptr->positionRaise, parser, "illumina-position-raise"); 
+
+        getOptionValue(ptr->meanQualityBegin, parser, "illumina-quality-mean-begin");
+        getOptionValue(ptr->meanQualityEnd, parser, "illumina-quality-mean-end");
+        getOptionValue(ptr->stdDevQualityBegin, parser, "illumina-quality-stddev-begin");
+        getOptionValue(ptr->stdDevQualityEnd, parser, "illumina-quality-stddev-end");
+
+        getOptionValue(ptr->meanMismatchQualityBegin, parser, "illumina-mismatch-quality-mean-begin");
+        getOptionValue(ptr->meanMismatchQualityEnd, parser, "illumina-mismatch-quality-mean-end");
+        getOptionValue(ptr->stdDevMismatchQualityBegin, parser, "illumina-mismatch-quality-stddev-begin");
+        getOptionValue(ptr->stdDevMismatchQualityEnd, parser, "illumina-mismatch-quality-stddev-end");
+    }
+    else if (tmpTech == "454")
+    {
+        Roche454SequencingOptions * ptr = static_cast<Roche454SequencingOptions *>(options.optionsImpl.get());
+
+        seqan::CharString tmp;
+        getOptionValue(tmp, parser, "454-read-length-model");
+        ptr->lengthModel = (tmp == "uniform") ? Roche454SequencingOptions::UNIFORM : Roche454SequencingOptions::NORMAL;
+
+        getOptionValue(ptr->minReadLength, parser, "454-read-length-min");
+        getOptionValue(ptr->maxReadLength, parser, "454-read-length-max");
+        getOptionValue(ptr->meanReadLength, parser, "454-read-length-mean");
+        getOptionValue(ptr->stdDevReadLength, parser, "454-read-length-stddev");
+        ptr->sqrtInStdDev = !isSet(parser, "454-no-sqrt-in-std-dev");
+        getOptionValue(ptr->k, parser, "454-proportionality-factor");
+        getOptionValue(ptr->backgroundNoiseMean, parser, "454-background-noise-mean");
+        getOptionValue(ptr->backgroundNoiseMean, parser, "454-background-noise-stddev");
+    }
+    else  // tmpTech == "sanger"
+    {
+        SangerSequencingOptions * ptr = static_cast<SangerSequencingOptions *>(options.optionsImpl.get());
+
+        seqan::CharString tmp;
+        getOptionValue(tmp, parser, "sanger-read-length-model");
+        ptr->readLengthIsUniform = (tmp == "uniform");
+
+        getOptionValue(ptr->readLengthMean, parser, "sanger-read-length-mean");
+        getOptionValue(ptr->readLengthError, parser, "sanger-read-length-error");
+        
+        getOptionValue(ptr->probabilityMismatchBegin, parser, "sanger-prob-mismatch-begin");
+        getOptionValue(ptr->probabilityMismatchEnd, parser, "sanger-prob-mismatch-end");
+        getOptionValue(ptr->probabilityInsertBegin, parser, "sanger-prob-insertion-begin");
+        getOptionValue(ptr->probabilityInsertEnd, parser, "sanger-prob-insertion-end");
+        getOptionValue(ptr->probabilityDeleteBegin, parser, "sanger-prob-deletion-begin");
+        getOptionValue(ptr->probabilityDeleteEnd, parser, "sanger-prob-deletion-end");
+
+        getOptionValue(ptr->qualityMatchStartMean, parser, "sanger-quality-match-start-mean");
+        getOptionValue(ptr->qualityMatchEndMean, parser, "sanger-quality-match-end-mean");
+        getOptionValue(ptr->qualityMatchStartStdDev, parser, "sanger-quality-match-start-stddev");
+        getOptionValue(ptr->qualityMatchEndStdDev, parser, "sanger-quality-match-end-stddev");
+        getOptionValue(ptr->qualityErrorStartMean, parser, "sanger-quality-error-start-mean");
+        getOptionValue(ptr->qualityErrorEndMean, parser, "sanger-quality-error-end-mean");
+        getOptionValue(ptr->qualityErrorStartStdDev, parser, "sanger-quality-error-start-stddev");
+        getOptionValue(ptr->qualityErrorEndStdDev, parser, "sanger-quality-error-end-stddev");
+    }
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -558,6 +684,10 @@ int main(int argc, char const ** argv)
         std::cerr << " OK\n";
     }
 
+    // Configure output streams to write out all sequences in a single line.
+    outReads.outputOptions.lineLength = 0;
+    outReadsRight.outputOptions.lineLength = 0;
+
     // Perform genome simulation.
     std::cerr << "\n__SIMULATING READS___________________________________________________________\n"
               << "\n"
@@ -568,6 +698,72 @@ int main(int argc, char const ** argv)
     SequencingSimulatorFactory factory(rng, &outReads, &outReadsRight, &inFragments, *options.optionsImpl, options.technology);
     std::auto_ptr<SequencingSimulator> sim = factory.make();
 
+    // Buffers for reading in fragments.
+    seqan::CharString fragId;
+    seqan::Dna5String fragSeq;
+    // Buffers for simulated reads.
+    seqan::Dna5String seqL, seqR;
+    seqan::CharString qualsL, qualsR;
+    // The information for storing the simulation info.
+    SequencingSimulationInfo simInfoL, simInfoR;
+
+    // We will use these string streams to generate the read identifier strings.
+    std::stringstream ssL, ssR;
+
+    for (unsigned readId = 1; !atEnd(inFragments); ++readId)
+    {
+
+        // Reset the string streams.
+        ssL.str("");
+        ssL.clear();
+        ssR.str("");
+        ssR.clear();
+
+        // Read fragment to simulate from.
+        if (readRecord(fragId, fragSeq, inFragments) != 0)
+            return 1;
+
+        if (empty(options.outputFilenameRight))  // Single-end sequencing.
+        {
+            sim->simulateSingleEnd(seqL, qualsL, simInfoL, infix(fragSeq, 0, length(fragSeq)));
+            ssL << options.readNamePrefix << readId;
+            if (options.optionsImpl->embedReadInfo)
+            {
+                ssL << ' ';
+                simInfoL.serialize(ssL);
+            }
+            if (writeRecord(outReads, ssL.str(), seqL, qualsL) != 0)
+            {
+                std::cerr << "ERROR writing to " << options.outputFilename << "\n";
+                return 1;
+            }
+        }
+        else  // Paired sequencing.
+        {
+            sim->simulatePairedEnd(seqL, qualsL, simInfoL, seqR, qualsR, simInfoR, infix(fragSeq, 0, length(fragSeq)));
+            ssL << options.readNamePrefix << readId;
+            ssR << options.readNamePrefix << readId;
+            if (options.optionsImpl->embedReadInfo)
+            {
+                ssL << ' ';
+                simInfoL.serialize(ssL);
+                ssR << ' ';
+                simInfoR.serialize(ssR);
+            }
+
+            if (writeRecord(outReads, ssL.str(), seqL, qualsL) != 0)
+            {
+                std::cerr << "ERROR writing to " << options.outputFilename << "\n";
+                return 1;
+            }
+            if (writeRecord(outReadsRight, ssR.str(), seqR, qualsR) != 0)
+            {
+                std::cerr << "ERROR writing to " << options.outputFilenameRight << "\n";
+                return 1;
+            }
+        }
+    }
+    
     std::cerr << " OK\n";
 
     std::cerr << "\nDONE.\n";

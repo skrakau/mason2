@@ -37,6 +37,8 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_SEQUENCING_H_
 #define SANDBOX_MASON2_APPS_MASON2_SEQUENCING_H_
 
+#include <seqan/bam_io.h>
+#include <seqan/modifier.h>
 #include <seqan/sequence.h>
 #include <seqan/random.h>
 
@@ -47,6 +49,8 @@
 typedef seqan::Dna5String TRead;
 typedef seqan::CharString TQualities;
 typedef seqan::Rng<seqan::MersenneTwister> TRng;
+typedef seqan::Infix<seqan::Dna5String const>::Type TFragment;
+typedef seqan::String<seqan::CigarElement<> > TCigarString;
 
 // ============================================================================
 // Tags, Classes, Enums
@@ -73,6 +77,9 @@ struct SequencingOptions
         REVERSE
     };
 
+    // Verbosity level.
+    int verbosity;
+
     // Number of reads.
     int numReads;
     // Whether or not to simulate qualities.
@@ -83,10 +90,12 @@ struct SequencingOptions
     MateOrientation mateOrientation;
     // Whether to simulate from forward/reverse strand or both.
     SourceStrands strands;
+    // Whether or not to embed meta data into the read identifier.
+    bool embedReadInfo;
 
     SequencingOptions() :
-            numReads(0), simulateQualities(false), simulateMatePairs(false), mateOrientation(FORWARD_REVERSE),
-            strands(BOTH)
+            verbosity(0), numReads(0), simulateQualities(false), simulateMatePairs(false),
+            mateOrientation(FORWARD_REVERSE), strands(BOTH), embedReadInfo(false)
     {}
 
     static const char * yesNo(bool b)
@@ -167,8 +176,8 @@ struct IlluminaSequencingOptions : SequencingOptions
     // Relative position in the read between 0 and 1 where the steeper curve begins.
     double positionRaise;
 
-    // If set then no Ns will be introduced into the read.
-    bool illuminaNoN;
+    // // If set then no Ns will be introduced into the read.
+    // bool illuminaNoN;
 
     // Base Calling Quality Model Parameters.
 
@@ -201,7 +210,7 @@ struct IlluminaSequencingOptions : SequencingOptions
             probabilityMismatchBegin(0.002),
             probabilityMismatchEnd(0.012),
             positionRaise(0.66),
-            illuminaNoN(false),
+            // illuminaNoN(false),
             // Base Calling Quality Model Parameters
             meanQualityBegin(40),
             meanQualityEnd(39.5),
@@ -333,10 +342,10 @@ struct SangerSequencingOptions : SequencingOptions
             << "  QUALITY STD DEV MATCH BEGIN   \t" << qualityMatchStartStdDev << "\n"
             << "  QUALITY STD DEV MATCH END     \t" << qualityMatchEndStdDev << "\n"
             << "\n"
-            << "  QUALITY MEAN MISMATCH BEGIN   \t" << qualityErrorStartMean << "\n"
-            << "  QUALITY MEAN MISMATCH END     \t" << qualityErrorEndMean << "\n"
-            << "  QUALITY STD DEV MISMATCH BEGIN\t" << qualityErrorStartStdDev << "\n"
-            << "  QUALITY STD DEV MISMATCH END  \t" << qualityErrorEndStdDev << "\n";
+            << "  QUALITY MEAN ERROR BEGIN      \t" << qualityErrorStartMean << "\n"
+            << "  QUALITY MEAN ERROR END        \t" << qualityErrorEndMean << "\n"
+            << "  QUALITY STD DEV ERROR BEGIN   \t" << qualityErrorStartStdDev << "\n"
+            << "  QUALITY STD DEV ERROR END     \t" << qualityErrorEndStdDev << "\n";
     }
 };
 
@@ -423,6 +432,35 @@ struct Roche454SequencingOptions : SequencingOptions
     }
 };
 
+// Composition of verbose information for sequencing simulation.
+//
+// Objects of this type store information such as the CIGAR string and the original sampled sequence for debug and
+// evaluation purposes.
+
+struct SequencingSimulationInfo
+{
+    // Originally sampled sequence, that together with the errors introduced by sequencing gives the read sequence.
+    TRead sampleSequence;
+
+    // The CIGAR string.
+    TCigarString cigar;
+
+    // Whether or not this comes from the forward strand.
+    bool isForward;
+
+    SequencingSimulationInfo() : isForward(false)
+    {}
+
+    template <typename TStream>
+    void serialize(TStream & stream) const
+    {
+        stream << "SAMPLE_SEQUENCE=" << sampleSequence << " CIGAR=";
+        for (unsigned i = 0; i < length(cigar); ++i)
+            stream << cigar[i].count << cigar[i].operation;
+        stream << " STRAND=" << (isForward ? 'F' : 'R');
+    }
+};
+
 // Responsible for the simulation of sequencing.
 //
 // We pick the read length independently of the error since the sequencing simulator might have context dependent
@@ -438,12 +476,22 @@ public:
         RIGHT
     };
 
+    static Direction direction(Direction s)
+    {
+        return (s == LEFT) ? RIGHT : LEFT;
+    }
+
     // Strand for sequencing.
     enum Strand
     {
         FORWARD,
         REVERSE
     };
+
+    static Strand toggle(Strand s)
+    {
+        return (s == FORWARD) ? REVERSE : FORWARD;
+    }
     
     // The random number generator.
     TRng & rng;
@@ -456,8 +504,61 @@ public:
     // Pick read length for the fragment to be simulated.
     virtual unsigned readLength() = 0;
 
+    // Simulate paired-end sequencing from a fragment.
+    void simulatePairedEnd(TRead & seqL, TQualities & qualsL, SequencingSimulationInfo & infoL,
+                           TRead & seqR, TQualities & qualsR, SequencingSimulationInfo & infoR,
+                           TFragment const & frag)
+    {
+        bool isForward = (pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1)) == 1);
+        Strand strand = isForward ? FORWARD : REVERSE;
+        this->simulateRead(seqL, qualsL, infoL, frag, LEFT, strand);
+        this->simulateRead(seqR, qualsR, infoR, frag, RIGHT, toggle(strand));
+    }
+
+    // Simulate single-end sequencing from a fragment.
+    void simulateSingleEnd(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                           TFragment const & frag)
+    {
+        bool isForward = (pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1)) == 1);
+        Strand strand = isForward ? FORWARD : REVERSE;
+        this->simulateRead(seq, quals, info, frag, LEFT, strand);
+    }
+
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand) = 0;
+    //
+    // seq -- target sequence of the read to simulate
+    // quals -- target qualities of the read to simulate
+    // frag -- source fragment
+    // strand -- the strand of the fragment, coordinates are relative to forward and will be affected by this flag
+    // dir -- whether this is the left or right read
+    virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                              TFragment const & frag, Direction dir, Strand strand) = 0;
+};
+
+// The internal Illumina model representation.
+
+class IlluminaModel
+{
+public:
+    // Probabilities for a mismatch at a given position.
+    seqan::String<double> mismatchProbabilities;
+
+    // Standard deviations for the normal distributions of base
+    // qualities for the mismatch case.
+    seqan::String<double> mismatchQualityMeans;
+    // Standard deviations for the normal distributions of base
+    // qualities for the mismatch case.
+    seqan::String<double> mismatchQualityStdDevs;
+
+    // Standard deviations for the normal distributions of base
+    // qualities for the non-mismatch case.
+    seqan::String<double> qualityMeans;
+    // Standard deviations for the normal distributions of base
+    // qualities for the non-mismatch case.
+    seqan::String<double> qualityStdDevs;
+
+    IlluminaModel()
+    {}
 };
 
 // Illumina read simulation.
@@ -468,10 +569,109 @@ public:
     // Configuration for Illumina sequencing.
     IlluminaSequencingOptions illuminaOptions;
 
+    // Storage for the Illumina simulation.
+    IlluminaModel model;
+
     IlluminaSequencingSimulator(TRng & rng,
                                 IlluminaSequencingOptions const & illuminaOptions) :
             SequencingSimulator(rng, options), illuminaOptions(illuminaOptions)
-    {}
+    {
+        this->_initModel();
+    }
+
+    void _initModel()
+    {
+        // Compute mismatch probabilities, piecewise linear function.
+        resize(model.mismatchProbabilities, illuminaOptions.readLength);
+        // Compute probability at raise point.
+        double y_r = 2 * illuminaOptions.probabilityMismatch - illuminaOptions.positionRaise * illuminaOptions.probabilityMismatchBegin - illuminaOptions.probabilityMismatchEnd + illuminaOptions.probabilityMismatchEnd * illuminaOptions.positionRaise;
+        if (illuminaOptions.verbosity >= 2)
+        {
+            std::cerr << "Illumina error curve:\n"
+                      << "  (0, " << illuminaOptions.probabilityMismatchBegin << ") -- (" << illuminaOptions.positionRaise << ", " << y_r << ") -- (1, " << illuminaOptions.probabilityMismatchEnd << ")\n";
+        }
+        // std::cout << "y_r = " << y_r << std::endl;
+        // Compute mismatch probability at each base.
+        /*if (illuminaOptions.probabilityMismatchFromFile)
+        {
+            // Open file.
+            std::fstream file;
+            file.open(toCString(illuminaOptions.probabilityMismatchFile), std::ios_base::in);
+            if (!file.is_open())
+            {
+                std::cerr << "Failed to load mismatch probabilities from " << illuminaOptions.probabilityMismatchFile << std::endl;
+                return 1;
+            }
+            // Load probabilities.
+            double x;
+            file >> x;
+            unsigned i;
+            for (i = 0; i < illuminaOptions.readLength && !file.eof(); ++i) {
+                model.mismatchProbabilities[i] = x;
+                file >> x;
+            }
+            if (i != illuminaOptions.readLength)
+            {
+                std::cerr << "Not enough mismatch probabilites in " << illuminaOptions.probabilityMismatchFile << " (" << i << " < " << illuminaOptions.readLength << ")!" << std::endl;
+                return 1;
+            }
+        } else */{
+            // Use piecewise linear function for mismatch probability simulation.
+            for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
+                double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
+                if (x < illuminaOptions.positionRaise) {
+                    double b = illuminaOptions.probabilityMismatchBegin;
+                    double m = (y_r - illuminaOptions.probabilityMismatchBegin) / illuminaOptions.positionRaise;
+                    model.mismatchProbabilities[i] = m * x + b;
+                    // std::cout << "model.mismatchProbabilities[" << i << "] = " << model.mismatchProbabilities[i] << std::endl;
+                } else {
+                    double b = y_r;
+                    double m = (illuminaOptions.probabilityMismatchEnd - y_r) / (1 - illuminaOptions.positionRaise);
+                    x -= illuminaOptions.positionRaise;
+                    model.mismatchProbabilities[i] = m * x + b;
+                    // std::cout << "model.mismatchProbabilities[" << i << "] = " << model.mismatchProbabilities[i] << std::endl;
+                }
+            }
+        }
+        if (illuminaOptions.probabilityMismatchScale != 1.0) {
+            for (unsigned i = 0; i < illuminaOptions.readLength; ++i)
+                model.mismatchProbabilities[i] *= illuminaOptions.probabilityMismatchScale;
+        }
+
+        // Compute match/mismatch means and standard deviations.
+        resize(model.mismatchQualityMeans, illuminaOptions.readLength);
+        for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
+            double b = illuminaOptions.meanMismatchQualityBegin;
+            double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
+            double m = (illuminaOptions.meanMismatchQualityEnd - illuminaOptions.meanMismatchQualityBegin);
+            model.mismatchQualityMeans[i] = m * x + b;
+            // std::cout << "model.mismatchQualityMeans[" << i << "] = " << model.mismatchQualityMeans[i] << std::endl;
+        }
+        resize(model.mismatchQualityStdDevs, illuminaOptions.readLength);
+        for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
+            double b = illuminaOptions.stdDevMismatchQualityBegin;
+            double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
+            double m = (illuminaOptions.stdDevMismatchQualityEnd - illuminaOptions.stdDevMismatchQualityBegin);
+            model.mismatchQualityStdDevs[i] = m * x + b;
+            // std::cout << "model.mismatchQualityStdDevs[" << i << "] = " << model.mismatchQualityStdDevs[i] << std::endl;
+        }
+        resize(model.qualityMeans, illuminaOptions.readLength);
+        for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
+            double b = illuminaOptions.meanQualityBegin;
+            double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
+            double m = (illuminaOptions.meanQualityEnd - illuminaOptions.meanQualityBegin);
+            model.qualityMeans[i] = m * x + b;
+            // std::cout << "model.qualityMeans[" << i << "] = " << model.qualityMeans[i] << std::endl;
+        }
+        resize(model.qualityStdDevs, illuminaOptions.readLength);
+        for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
+            double b = illuminaOptions.stdDevQualityBegin;
+            double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
+            double m = (illuminaOptions.stdDevQualityEnd - illuminaOptions.stdDevQualityBegin);
+            model.qualityStdDevs[i] = m * x + b;
+            // std::cout << "model.qualityStdDevs[" << i << "] = " << model.qualityStdDevs[i] << std::endl;
+        }
+    }
 
     // Pick read length for the fragment to be simulated.
     virtual unsigned readLength()
@@ -480,8 +680,202 @@ public:
     }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
-    {}
+    virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                              TFragment const & frag, Direction dir, Strand strand)
+    {
+        // Simulate sequencing operations.
+        TCigarString cigar;
+        _simulateCigar(cigar);
+
+        // TODO(holtgrew): Check that the CIGAR string does not need more sequence than we have in frag.
+
+        // Simulate sequence (materialize mismatches and insertions).
+        typedef seqan::ModifiedString<seqan::ModifiedString<TFragment, seqan::ModView<seqan::FunctorComplement<seqan::Dna5> > >, seqan::ModReverse> TRevCompFrag;
+        if ((dir == LEFT) == (strand == FORWARD))
+            _simulateSequence(seq, frag, cigar);
+        else
+            _simulateSequence(seq, TRevCompFrag(frag), cigar);
+
+        // Simulate qualities.
+        _simulateQualities(quals, cigar);
+        SEQAN_ASSERT_EQ(length(seq), length(quals));
+
+        // Reverse-complement sequence and reverse qualities if necessary.
+        if (strand == REVERSE)
+            reverseComplement(seq);
+
+        // Write out sequencing information info if configured to do so.
+        if (options.embedReadInfo)
+        {
+            info.cigar = cigar;
+            unsigned len = 0;
+            _getLengthInRef(cigar, len);
+            if ((dir == LEFT) == (strand == FORWARD))
+                info.sampleSequence = prefix(frag, len);
+            else
+                info.sampleSequence = suffix(frag, length(frag) - len);
+            info.isForward = (strand == FORWARD);
+            if (strand == REVERSE)
+                reverseComplement(info.sampleSequence);
+        }
+    }
+
+    // Simulate PHRED qualities from the CIGAR string.
+    void _simulateQualities(TQualities & quals, TCigarString const & cigar)
+    {
+        clear(quals);
+
+        unsigned pos = 0;
+        for (unsigned i = 0; i < length(cigar); ++i)
+        {
+            for (unsigned j = 0; j < cigar[i].count; ++j, ++pos)
+            {
+                int q = 0;
+                if (cigar[i].operation == 'M')
+                {
+                    seqan::Pdf<seqan::Normal> pdf(model.qualityMeans[pos], model.qualityStdDevs[pos]);
+                    q = static_cast<int>(pickRandomNumber(rng, pdf));
+                }
+                else if (cigar[i].operation == 'I' || cigar[i].operation == 'X')
+                {
+                    seqan::Pdf<seqan::Normal> pdf(model.mismatchQualityMeans[pos], model.mismatchQualityStdDevs[pos]);
+                    q = static_cast<int>(pickRandomNumber(rng, pdf));
+                }
+                else
+                {
+                    // Deletion/padding, no quality required.
+                    continue;
+                }
+                q = std::max(0, std::min(q, 40));  // limit quality to 0..40
+                appendValue(quals, (char)('!' + q));
+            }
+        }
+    }
+
+    // Simulate the characters that polymorphisms turn into and inserted characters.
+    //
+    // Through the usage of ModifiedString, we will always go from the left to the right end.
+    template <typename TFrag>
+    void _simulateSequence(TRead & read, TFrag const & frag,
+                           TCigarString const & cigar)
+    {
+        clear(read);
+
+        typedef typename seqan::Iterator<TFrag>::Type TFragIter;
+        TFragIter it = begin(frag, seqan::Standard());
+
+        for (unsigned i = 0; i < length(cigar); ++i)
+        {
+            unsigned numSimulate = 0;
+            if (cigar[i].operation == 'M')
+            {
+                for (unsigned j = 0; j < cigar[i].count; ++j, ++it)
+                    appendValue(read, *it);
+                continue;
+            }
+            else if (cigar[i].operation == 'D')
+            {
+                it += cigar[i].count;
+                continue;
+            }
+
+            // Otherwise, we have insertions or mismatches.
+            for (unsigned j = 0; j < cigar[i].count; ++j)
+            {
+                // Pick a value between 0 and 1.
+                double x = 1.0;
+                while (x == 1.0)
+                    x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
+                int num = x / 0.25;
+
+                // NOTE: We can only insert CGAT, but we can have a polymorphism to N.
+
+                if (cigar[i].operation == 'I')
+                    appendValue(read, seqan::Dna5(num));
+                else
+                    appendValue(read, seqan::Dna5(num + (num == ordValue(*it))));
+            }
+        }
+    }
+
+    // Simulate CIGAR string.  We can do this with position specific parameters only and thus independent of any
+    // context.
+    void _simulateCigar(TCigarString & cigar)
+    {
+        clear(cigar);
+        unsigned len = this->readLength();
+
+        for (unsigned i = 0; i < len;)
+        {
+            double x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
+            double pMismatch = model.mismatchProbabilities[i];
+            double pInsert   = illuminaOptions.probabilityInsert;
+            double pDelete   = illuminaOptions.probabilityDelete;
+            double pMatch    = 1.0 - pMismatch - pInsert - pDelete;
+
+            // Simulate mutation/insertion/deletion events.  If possible we reuse the last CIGAR entry.  Adjacent
+            // insertion/deletion pairs cancel each other out.
+
+            if (x < pMatch)  // match
+            {
+                ++i;
+                if (empty(cigar) || back(cigar).operation != 'M')
+                    appendValue(cigar, seqan::CigarElement<>('M', 1));
+                else
+                    back(cigar).count += 1;
+            }
+            else if (x < pMatch + pMismatch)  // point polymorphism
+            {
+                ++i;
+                if (empty(cigar) || back(cigar).operation != 'X')
+                    appendValue(cigar, seqan::CigarElement<>('X', 1));
+                else
+                    back(cigar).count += 1;
+            }
+            else if (x < pMatch + pMismatch + pInsert) // insertion
+            {
+                if (!empty(cigar) && back(cigar).operation == 'D')
+                {
+                    // This is an insertion following a deletion, they swallow each other up.
+                    if (back(cigar).count > 1u)
+                        back(cigar).count -= 1;
+                    else
+                        eraseBack(cigar);
+                }
+                else if (empty(cigar) || back(cigar).operation != 'I')
+                {
+                    ++i;
+                    appendValue(cigar, seqan::CigarElement<>('I', 1));
+                }
+                else
+                {
+                    ++i;
+                    back(cigar).count += 1;
+                }
+            }
+            else  // deletion
+            {
+                if (!empty(cigar) && back(cigar).operation == 'I')
+                {
+                    // This is an deletion following an insertion, they swallow each other up.
+                    if (back(cigar).count > 1u)
+                        back(cigar).count -= 1;
+                    else
+                        eraseBack(cigar);
+                }
+                else if (empty(cigar) || back(cigar).operation != 'D')
+                {
+                    ++i;
+                    appendValue(cigar, seqan::CigarElement<>('D', 1));
+                }
+                else
+                {
+                    ++i;
+                    back(cigar).count += 1;
+                }
+            }
+        }
+    }
 };
 
 // 454 read simulation.
@@ -502,7 +896,8 @@ public:
     { return 0; }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
+    virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                              TFragment const & frag, Direction dir, Strand strand)
     {}
 };
 
@@ -524,7 +919,8 @@ public:
     { return 0; }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
-    virtual void simulateRead(TRead & seq, TQualities & quals, Direction dir, Strand strand)
+    virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                              TFragment const & frag, Direction dir, Strand strand)
     {}
 };
 
