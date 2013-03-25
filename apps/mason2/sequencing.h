@@ -1339,12 +1339,127 @@ public:
 
     // Pick read length for the fragment to be simulated.
     virtual unsigned readLength()
-    { return 0; }
+    {
+        if (sangerOptions.readLengthIsUniform)
+        {
+            // Pick uniformly.
+            double minLen = sangerOptions.readLengthMean - sangerOptions.readLengthError;
+            double maxLen = sangerOptions.readLengthMean + sangerOptions.readLengthError;
+            double len = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(minLen, maxLen));
+            return static_cast<unsigned>(round(len));
+        }
+        else
+        {
+            // Pick normally distributed.
+            double len = pickRandomNumber(rng, seqan::Pdf<seqan::Normal>(sangerOptions.readLengthMean, sangerOptions.readLengthError));
+            return static_cast<unsigned>(round(len));
+        }
+    }
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
     virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
                               TFragment const & frag, Direction dir, Strand strand)
-    {}
+    {
+#if 0
+        clear(inst.editString);
+        reserve(inst.editString, static_cast<size_t>(1.2 * readLength), Generous());
+        inst.mismatchCount = 0;
+        inst.delCount = 0;
+        inst.insCount = 0;
+        if (options.simulateQualities) {
+            reserve(inst.qualities, readLength, Generous());
+            clear(inst.qualities);
+        }
+
+        //
+        // Build Edit String.
+        //
+        for (unsigned i = 0; i < readLength; /*NOP*/) {
+            double x = pickRandomNumber(rng, Pdf<Uniform<double> >(0, 1));
+            double pos = 1.0 * i / (readLength - 1);
+            double pMismatch = options.probabilityMismatchBegin + pos * (options.probabilityMismatchEnd - options.probabilityMismatchBegin);
+            double pInsert   = options.probabilityInsertBegin + pos * (options.probabilityInsertEnd - options.probabilityInsertBegin);
+            double pDelete   = options.probabilityDeleteBegin + pos * (options.probabilityDeleteEnd - options.probabilityDeleteBegin);
+            double pMatch    = 1.0 - pMismatch - pInsert - pDelete;
+            if (x < pMatch) {
+                // match
+                ++i;
+                appendValue(inst.editString, ERROR_TYPE_MATCH);
+            } else if (x < pMatch + pMismatch) {
+                // mismatch
+                ++i;
+                ++inst.mismatchCount;
+                appendValue(inst.editString, ERROR_TYPE_MISMATCH);
+            } else if (x < pMatch + pMismatch + pInsert) {
+                // insert
+                if (length(inst.editString) > 0 && back(inst.editString == ERROR_TYPE_DELETE)) {
+                    --inst.delCount;
+                    eraseBack(inst.editString);
+                } else {
+                    ++i;
+                    ++inst.insCount;
+                    appendValue(inst.editString, ERROR_TYPE_INSERT);
+                }
+            } else {
+                // Decrement string size, do not add a delete if string is
+                // too short, possibly remove insert from edit string.
+                if (length(inst.editString) > 0) {
+                    if (back(inst.editString == ERROR_TYPE_INSERT)) {
+                        --i;
+                        --inst.insCount;
+                        eraseBack(inst.editString);
+                    } else {
+                        ++inst.delCount;
+                        appendValue(inst.editString, ERROR_TYPE_DELETE);
+                    }
+                }
+            }
+        }
+        SEQAN_ASSERT_EQ(readLength, length(inst.editString) - inst.delCount);
+
+        //
+        // Adjust Positions.
+        //
+
+        // If the number of deletions does not equal the number of inserts
+        // then we have to adjust the read positions.
+        if (inst.delCount != inst.insCount) {
+            int delta = static_cast<int>(inst.delCount) - static_cast<int>(inst.insCount);
+            inst.endPos += delta;
+            if (inst.endPos > length(contig)) {
+                delta = inst.endPos - length(contig);
+                inst.endPos -= delta;
+                inst.beginPos -= delta;
+            }
+            SEQAN_ASSERT_EQ(inst.endPos - inst.beginPos + inst.insCount - inst.delCount,
+                            readLength);
+        }
+
+        //
+        // Quality Simulation.
+        //
+        if (options.simulateQualities) {
+            reserve(inst.qualities, readLength + inst.insCount - inst.delCount, Exact());
+            clear(inst.qualities);
+
+            for (unsigned i = 0; i < length(inst.editString); ++i) {
+                double mean, stdDev;
+                double pos = 1.0 * i / (readLength + inst.insCount - inst.delCount - 1);
+                if (inst.editString[i] ==  ERROR_TYPE_DELETE) {
+                    continue;  // No quality to give out.
+                } else if (inst.editString[i] ==  ERROR_TYPE_INSERT || inst.editString[i] ==  ERROR_TYPE_MISMATCH) {
+                    mean = options.qualityMatchStartMean + pos * (options.qualityMatchEndMean - options.qualityMatchStartMean);
+                    stdDev = options.qualityMatchStartStdDev + pos * (options.qualityMatchEndStdDev - options.qualityMatchStartStdDev);
+                } else {
+                    mean = options.qualityErrorStartMean + pos * (options.qualityErrorEndMean - options.qualityErrorStartMean);
+                    stdDev = options.qualityErrorStartStdDev + pos * (options.qualityErrorEndStdDev - options.qualityErrorStartStdDev);
+                }
+                Pdf<Normal> pdf(mean, stdDev);
+                appendValue(inst.qualities, static_cast<int>(pickRandomNumber(rng, pdf)));
+            }
+        }
+#endif  // #if 0
+    }
 };
 
 // Factory for SequencingSimulator objects.
