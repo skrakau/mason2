@@ -210,6 +210,13 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     setMinValue(parser, "illumina-read-length", "1");
     setDefaultValue(parser, "illumina-read-length", "100");
 
+    addOption(parser, seqan::ArgParseOption("", "illumina-error-profile-file",
+                                            "Path to file with Illumina error profile.  The file must be a text file "
+                                            "with floating point numbers separated by space, each giving a positional "
+                                            "error rate.",
+                                            seqan::ArgParseOption::INPUTFILE, "FILE"));
+    setValidValues(parser, "illumina-error-profile-file", "txt");
+
     addOption(parser, seqan::ArgParseOption("", "illumina-prob-insert",
                                             "Insert per-base probability for insertion in Illumina sequencing.",
                                             seqan::ArgParseOption::DOUBLE, "PROB"));
@@ -545,6 +552,8 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
         IlluminaSequencingOptions * ptr = static_cast<IlluminaSequencingOptions *>(options.optionsImpl.get());
 
         getOptionValue(ptr->readLength, parser, "illumina-read-length");
+
+        getOptionValue(ptr->probabilityMismatchFile, parser, "illumina-error-profile-file");
 
         getOptionValue(ptr->probabilityInsert, parser, "illumina-prob-insert");
         getOptionValue(ptr->probabilityDelete, parser, "illumina-prob-deletion");

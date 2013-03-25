@@ -155,6 +155,9 @@ struct IlluminaSequencingOptions : SequencingOptions
     // Length of the reads to simulate.
     unsigned readLength;
 
+    // Path to file with positional error probabilities.
+    seqan::CharString probabilityMismatchFile;
+
     // Base Calling Error Model Parameters.
 
     // Probability of an insertion.
@@ -592,7 +595,7 @@ public:
         }
         // std::cout << "y_r = " << y_r << std::endl;
         // Compute mismatch probability at each base.
-        /*if (illuminaOptions.probabilityMismatchFromFile)
+        if (!empty(illuminaOptions.probabilityMismatchFile))
         {
             // Open file.
             std::fstream file;
@@ -600,7 +603,7 @@ public:
             if (!file.is_open())
             {
                 std::cerr << "Failed to load mismatch probabilities from " << illuminaOptions.probabilityMismatchFile << std::endl;
-                return 1;
+                // return 1;
             }
             // Load probabilities.
             double x;
@@ -613,9 +616,9 @@ public:
             if (i != illuminaOptions.readLength)
             {
                 std::cerr << "Not enough mismatch probabilites in " << illuminaOptions.probabilityMismatchFile << " (" << i << " < " << illuminaOptions.readLength << ")!" << std::endl;
-                return 1;
+                // return 1;
             }
-        } else */{
+        } else {
             // Use piecewise linear function for mismatch probability simulation.
             for (unsigned i = 0; i < illuminaOptions.readLength; ++i) {
                 double x = static_cast<double>(i) / (illuminaOptions.readLength - 1);
