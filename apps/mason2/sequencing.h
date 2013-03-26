@@ -150,6 +150,33 @@ struct SequencingOptions
     }
 };
 
+// Utility.
+
+// Returns (a, b) where a is the difference in resulting read length and b is the difference in used up input sequence
+// length.
+
+inline std::pair<int, int> appendOperation(TCigarString & cigar, char op)
+{
+    // Canceling out of events.  This can only happen if the CIGAR string is not empty.
+    if (!empty(cigar) && ((back(cigar).operation == 'I' && op == 'D') ||
+                          (back(cigar).operation == 'D' && op == 'I')))
+    {
+        if (back(cigar).count > 1)
+            back(cigar).count -= 1;
+        else
+            eraseBack(cigar);
+        return std::make_pair(-(op == 'I'), -(op == 'D'));
+    }
+
+    // No canceling out of events.  The read length increases by one if the operation is no deletion and one base of
+    // input sequence is used up if the operation is not an insertion.
+    if (!empty(cigar) && back(cigar).operation == op)
+        back(cigar).count += 1;
+    else
+        appendValue(cigar, seqan::CigarElement<>(op, 1));
+    return std::make_pair((op != 'D'), (op != 'I'));
+}
+
 // Sequencing options that are relevant for Illumina sequencing.
 
 struct IlluminaSequencingOptions : SequencingOptions
@@ -266,13 +293,15 @@ struct SangerSequencingOptions : SequencingOptions
     // standard distribution will be used.
     bool readLengthIsUniform;
 
-    // Average read length.
+    // Average read length for normal distribution.
     double readLengthMean;
 
-    // For standard distributed read lengths, this is the standard deviation,
-    // for uniform read length the interval around the average to use for
-    // picking the read lengths.
+    // For standard distributed read lengths, this is the standard deviation.
     double readLengthError;
+
+    // Minimal and maximal read lenght in case of uniform distribution.
+    double readLengthMin;
+    double readLengthMax;
 
     // Base Calling Error Model Parameters.
 
@@ -304,6 +333,8 @@ struct SangerSequencingOptions : SequencingOptions
             : readLengthIsUniform(false),
               readLengthMean(400),
               readLengthError(40),
+              readLengthMin(100),
+              readLengthMax(200),
               probabilityMismatchBegin(0.005),
               probabilityMismatchEnd(0.01),
               probabilityInsertBegin(0.0025),
@@ -870,7 +901,7 @@ public:
         clear(cigar);
         unsigned len = this->readLength();
 
-        for (unsigned i = 0; i < len;)
+        for (int i = 0; i < (int)len;)
         {
             double x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
             double pMismatch = model.mismatchProbabilities[i];
@@ -881,64 +912,16 @@ public:
             // Simulate mutation/insertion/deletion events.  If possible we reuse the last CIGAR entry.  Adjacent
             // insertion/deletion pairs cancel each other out.
 
+            // TODO(holtgrew): No indel at beginning or ending! Same for other simulators!
+
             if (x < pMatch)  // match
-            {
-                ++i;
-                if (empty(cigar) || back(cigar).operation != 'M')
-                    appendValue(cigar, seqan::CigarElement<>('M', 1));
-                else
-                    back(cigar).count += 1;
-            }
+                i += appendOperation(cigar, 'M').first;
             else if (x < pMatch + pMismatch)  // point polymorphism
-            {
-                ++i;
-                if (empty(cigar) || back(cigar).operation != 'X')
-                    appendValue(cigar, seqan::CigarElement<>('X', 1));
-                else
-                    back(cigar).count += 1;
-            }
+                i += appendOperation(cigar, 'X').first;
             else if (x < pMatch + pMismatch + pInsert) // insertion
-            {
-                if (!empty(cigar) && back(cigar).operation == 'D')
-                {
-                    // This is an insertion following a deletion, they swallow each other up.
-                    if (back(cigar).count > 1u)
-                        back(cigar).count -= 1;
-                    else
-                        eraseBack(cigar);
-                }
-                else if (empty(cigar) || back(cigar).operation != 'I')
-                {
-                    ++i;
-                    appendValue(cigar, seqan::CigarElement<>('I', 1));
-                }
-                else
-                {
-                    ++i;
-                    back(cigar).count += 1;
-                }
-            }
+                i += appendOperation(cigar, 'I').first;
             else  // deletion
-            {
-                if (!empty(cigar) && back(cigar).operation == 'I')
-                {
-                    // This is an deletion following an insertion, they swallow each other up.
-                    if (back(cigar).count > 1u)
-                        back(cigar).count -= 1;
-                    else
-                        eraseBack(cigar);
-                }
-                else if (empty(cigar) || back(cigar).operation != 'D')
-                {
-                    ++i;
-                    appendValue(cigar, seqan::CigarElement<>('D', 1));
-                }
-                else
-                {
-                    ++i;
-                    back(cigar).count += 1;
-                }
-            }
+                i += appendOperation(cigar, 'D').first;
         }
     }
 };
@@ -1170,26 +1153,6 @@ public:
         }
     }
 
-    void appendOperation(TCigarString & cigar, char op)
-    {
-        if (!empty(cigar) && ((back(cigar).operation == 'I' && op == 'D') ||
-                              (back(cigar).operation == 'D' && op == 'I')))
-        {
-            if (back(cigar).count > 1)
-                back(cigar).count -= 1;
-            else
-                eraseBack(cigar);
-        }
-        else if (!empty(cigar) && back(cigar).operation == op)
-        {
-            back(cigar).count += 1;
-        }
-        else
-        {
-            appendValue(cigar, seqan::CigarElement<>(op, 1));
-        }
-    }
-
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
     virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
                               TFragment const & frag, Direction dir, Strand strand)
@@ -1343,8 +1306,8 @@ public:
         if (sangerOptions.readLengthIsUniform)
         {
             // Pick uniformly.
-            double minLen = sangerOptions.readLengthMean - sangerOptions.readLengthError;
-            double maxLen = sangerOptions.readLengthMean + sangerOptions.readLengthError;
+            double minLen = sangerOptions.readLengthMin;
+            double maxLen = sangerOptions.readLengthMax;
             double len = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(minLen, maxLen));
             return static_cast<unsigned>(round(len));
         }
@@ -1360,105 +1323,169 @@ public:
     virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
                               TFragment const & frag, Direction dir, Strand strand)
     {
-#if 0
-        clear(inst.editString);
-        reserve(inst.editString, static_cast<size_t>(1.2 * readLength), Generous());
-        inst.mismatchCount = 0;
-        inst.delCount = 0;
-        inst.insCount = 0;
-        if (options.simulateQualities) {
-            reserve(inst.qualities, readLength, Generous());
-            clear(inst.qualities);
+        // TODO(holtgrew): Pick better names for read length here.
+        // Pick sampled length.
+        unsigned readLength = this->readLength();
+
+        if (readLength > length(frag))
+        {
+            throw std::runtime_error("Sanger read is too long, increase fragment length");
         }
 
-        //
-        // Build Edit String.
-        //
-        for (unsigned i = 0; i < readLength; /*NOP*/) {
-            double x = pickRandomNumber(rng, Pdf<Uniform<double> >(0, 1));
+        // Simulate CIGAR string.
+        TCigarString cigar;
+        this->_simulateCigar(cigar, readLength);
+
+        // Simulate sequence (materialize mismatches and insertions).
+        typedef seqan::ModifiedString<seqan::ModifiedString<TFragment, seqan::ModView<seqan::FunctorComplement<seqan::Dna5> > >, seqan::ModReverse> TRevCompFrag;
+        if ((dir == LEFT) && (strand == FORWARD))
+            _simulateSequence(seq, prefix(frag, readLength), cigar);
+        else if ((dir == LEFT) && (strand == REVERSE))
+            _simulateSequence(seq, TRevCompFrag(prefix(frag, readLength)), cigar);
+        else if ((dir == RIGHT) && (strand == FORWARD))
+            _simulateSequence(seq, suffix(frag, length(frag) - readLength), cigar);
+        else  // ((dir == RIGHT) && (strand == REVERSE))
+            _simulateSequence(seq, TRevCompFrag(suffix(frag, length(frag) - readLength)), cigar);
+
+        // Simulate Qualities.
+        this->_simulateQualities(quals, cigar, readLength);
+
+        // Reverse qualities if necessary.
+        if (strand == REVERSE)
+            reverse(quals);
+
+        // Write out sequencing information info if configured to do so.
+        if (sangerOptions.embedReadInfo)
+        {
+            info.cigar = cigar;
+            unsigned len = 0;
+            _getLengthInRef(cigar, len);
+            if (dir == LEFT)
+                info.sampleSequence = prefix(frag, len);
+            else
+                info.sampleSequence = suffix(frag, length(frag) - len);
+            info.isForward = (strand == FORWARD);
+            if (strand == REVERSE)
+                reverseComplement(info.sampleSequence);
+        }
+    }
+
+    // Simulate CIGAR string.  We can do this with position specific parameters only and thus independent of any
+    // context.
+    void _simulateCigar(TCigarString & cigar, unsigned readLength)
+    {
+        clear(cigar);
+
+        for (unsigned i = 0; i < readLength;)
+        {
+            double x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
             double pos = 1.0 * i / (readLength - 1);
-            double pMismatch = options.probabilityMismatchBegin + pos * (options.probabilityMismatchEnd - options.probabilityMismatchBegin);
-            double pInsert   = options.probabilityInsertBegin + pos * (options.probabilityInsertEnd - options.probabilityInsertBegin);
-            double pDelete   = options.probabilityDeleteBegin + pos * (options.probabilityDeleteEnd - options.probabilityDeleteBegin);
+            double pMismatch = sangerOptions.probabilityMismatchBegin + pos * (sangerOptions.probabilityMismatchEnd - sangerOptions.probabilityMismatchBegin);
+            double pInsert   = sangerOptions.probabilityInsertBegin + pos * (sangerOptions.probabilityInsertEnd - sangerOptions.probabilityInsertBegin);
+            double pDelete   = sangerOptions.probabilityDeleteBegin + pos * (sangerOptions.probabilityDeleteEnd - sangerOptions.probabilityDeleteBegin);
             double pMatch    = 1.0 - pMismatch - pInsert - pDelete;
-            if (x < pMatch) {
-                // match
-                ++i;
-                appendValue(inst.editString, ERROR_TYPE_MATCH);
-            } else if (x < pMatch + pMismatch) {
-                // mismatch
-                ++i;
-                ++inst.mismatchCount;
-                appendValue(inst.editString, ERROR_TYPE_MISMATCH);
-            } else if (x < pMatch + pMismatch + pInsert) {
-                // insert
-                if (length(inst.editString) > 0 && back(inst.editString == ERROR_TYPE_DELETE)) {
-                    --inst.delCount;
-                    eraseBack(inst.editString);
-                } else {
-                    ++i;
-                    ++inst.insCount;
-                    appendValue(inst.editString, ERROR_TYPE_INSERT);
-                }
-            } else {
-                // Decrement string size, do not add a delete if string is
-                // too short, possibly remove insert from edit string.
-                if (length(inst.editString) > 0) {
-                    if (back(inst.editString == ERROR_TYPE_INSERT)) {
-                        --i;
-                        --inst.insCount;
-                        eraseBack(inst.editString);
-                    } else {
-                        ++inst.delCount;
-                        appendValue(inst.editString, ERROR_TYPE_DELETE);
-                    }
-                }
+
+            // Simulate mutation/insertion/deletion events.  If possible we reuse the last CIGAR entry.  Adjacent
+            // insertion/deletion pairs cancel each other out.  We count i up to the input read length, thus using the
+            // "second" member of appendOperation()'s result.
+
+            // TODO(holtgrew): No indels at beginning or end of read.
+
+            if (x < pMatch)  // match
+                i += appendOperation(cigar, 'M').second;
+            else if (x < pMatch + pMismatch)  // point polymorphism
+                i += appendOperation(cigar, 'X').second;
+            else if (x < pMatch + pMismatch + pInsert) // insertion
+                i += appendOperation(cigar, 'I').second;
+            else  // deletion
+                i += appendOperation(cigar, 'D').second;
+        }
+    }
+
+    // TODO(holtgrew): Copy-and-paste from IlluminaSequencingSimulator.
+    //
+    // Simulate the characters that polymorphisms turn into and inserted characters.
+    //
+    // Through the usage of ModifiedString, we will always go from the left to the right end.
+    template <typename TFrag>
+    void _simulateSequence(TRead & read, TFrag const & frag,
+                           TCigarString const & cigar)
+    {
+        clear(read);
+
+        typedef typename seqan::Iterator<TFrag>::Type TFragIter;
+        TFragIter it = begin(frag, seqan::Standard());
+
+        for (unsigned i = 0; i < length(cigar); ++i)
+        {
+            unsigned numSimulate = 0;
+            if (cigar[i].operation == 'M')
+            {
+                for (unsigned j = 0; j < cigar[i].count; ++j, ++it)
+                    appendValue(read, *it);
+                continue;
+            }
+            else if (cigar[i].operation == 'D')
+            {
+                it += cigar[i].count;
+                continue;
+            }
+
+            // Otherwise, we have insertions or mismatches.
+            for (unsigned j = 0; j < cigar[i].count; ++j)
+            {
+                // Pick a value between 0 and 1.
+                double x = 1.0;
+                while (x == 1.0)
+                    x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
+                int num = x / 0.25;
+
+                // NOTE: We can only insert CGAT, but we can have a polymorphism to N.
+
+                if (cigar[i].operation == 'I')
+                    appendValue(read, seqan::Dna5(num));
+                else
+                    appendValue(read, seqan::Dna5(num + (num == ordValue(*it))));
             }
         }
-        SEQAN_ASSERT_EQ(readLength, length(inst.editString) - inst.delCount);
+    }
 
-        //
-        // Adjust Positions.
-        //
+    void _simulateQualities(TQualities & quals, TCigarString const & cigar, unsigned sampleLength)
+    {
+        clear(quals);
 
-        // If the number of deletions does not equal the number of inserts
-        // then we have to adjust the read positions.
-        if (inst.delCount != inst.insCount) {
-            int delta = static_cast<int>(inst.delCount) - static_cast<int>(inst.insCount);
-            inst.endPos += delta;
-            if (inst.endPos > length(contig)) {
-                delta = inst.endPos - length(contig);
-                inst.endPos -= delta;
-                inst.beginPos -= delta;
-            }
-            SEQAN_ASSERT_EQ(inst.endPos - inst.beginPos + inst.insCount - inst.delCount,
-                            readLength);
-        }
+        unsigned pos = 0;   // Position in result.
+        unsigned rPos = 0;  // Position in fragment.
+        for (unsigned i = 0; i < length(cigar); ++i)
+        {
+            for (unsigned j = 0; j < cigar[i].count; ++j, ++pos)
+            {
+                double mean = 0.0, stdDev = 0.0;
+                double relPos = 1.0 * rPos / (1.0 * sampleLength);
 
-        //
-        // Quality Simulation.
-        //
-        if (options.simulateQualities) {
-            reserve(inst.qualities, readLength + inst.insCount - inst.delCount, Exact());
-            clear(inst.qualities);
+                rPos += (cigar[i].operation != 'D');
 
-            for (unsigned i = 0; i < length(inst.editString); ++i) {
-                double mean, stdDev;
-                double pos = 1.0 * i / (readLength + inst.insCount - inst.delCount - 1);
-                if (inst.editString[i] ==  ERROR_TYPE_DELETE) {
+                if (cigar[i].operation == 'D')
+                {
                     continue;  // No quality to give out.
-                } else if (inst.editString[i] ==  ERROR_TYPE_INSERT || inst.editString[i] ==  ERROR_TYPE_MISMATCH) {
-                    mean = options.qualityMatchStartMean + pos * (options.qualityMatchEndMean - options.qualityMatchStartMean);
-                    stdDev = options.qualityMatchStartStdDev + pos * (options.qualityMatchEndStdDev - options.qualityMatchStartStdDev);
-                } else {
-                    mean = options.qualityErrorStartMean + pos * (options.qualityErrorEndMean - options.qualityErrorStartMean);
-                    stdDev = options.qualityErrorStartStdDev + pos * (options.qualityErrorEndStdDev - options.qualityErrorStartStdDev);
                 }
-                Pdf<Normal> pdf(mean, stdDev);
-                appendValue(inst.qualities, static_cast<int>(pickRandomNumber(rng, pdf)));
+                else if (cigar[i].operation == 'I' || cigar[i].operation == 'X')
+                {
+                    mean = sangerOptions.qualityMatchStartMean + pos * (sangerOptions.qualityMatchEndMean - sangerOptions.qualityMatchStartMean);
+                    stdDev = sangerOptions.qualityMatchStartStdDev + pos * (sangerOptions.qualityMatchEndStdDev - sangerOptions.qualityMatchStartStdDev);
+                }
+                else  // cigar[i].operation == 'M'
+                {
+                    mean = sangerOptions.qualityErrorStartMean + pos * (sangerOptions.qualityErrorEndMean - sangerOptions.qualityErrorStartMean);
+                    stdDev = sangerOptions.qualityErrorStartStdDev + pos * (sangerOptions.qualityErrorEndStdDev - sangerOptions.qualityErrorStartStdDev);
+                }
+
+                seqan::Pdf<seqan::Normal> pdf(mean, stdDev);
+                int q = static_cast<int>(pickRandomNumber(rng, pdf));
+                q = std::max(0, std::min(40, q));
+                appendValue(quals, (char)('!' + q));
             }
         }
-#endif  // #if 0
     }
 };
 

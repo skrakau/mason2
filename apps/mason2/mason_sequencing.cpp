@@ -613,6 +613,8 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
 
         getOptionValue(ptr->readLengthMean, parser, "sanger-read-length-mean");
         getOptionValue(ptr->readLengthError, parser, "sanger-read-length-error");
+        getOptionValue(ptr->readLengthMin, parser, "sanger-read-length-min");
+        getOptionValue(ptr->readLengthMax, parser, "sanger-read-length-max");
         
         getOptionValue(ptr->probabilityMismatchBegin, parser, "sanger-prob-mismatch-begin");
         getOptionValue(ptr->probabilityMismatchEnd, parser, "sanger-prob-mismatch-end");
