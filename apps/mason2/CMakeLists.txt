@@ -43,11 +43,13 @@ add_executable (mason_sequencing
                 simulate_sanger.cpp
                 simulate_454.cpp
                 simulate_illumina.cpp)
+add_executable (mason_variator mason_variator.cpp)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
 target_link_libraries (mason_fragments ${SEQAN_LIBRARIES})
 target_link_libraries (mason_sequencing ${SEQAN_LIBRARIES})
+target_link_libraries (mason_variator ${SEQAN_LIBRARIES})
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
