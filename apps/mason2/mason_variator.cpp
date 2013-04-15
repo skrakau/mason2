@@ -37,6 +37,7 @@
 // ==========================================================================
 
 #include  <seqan/arg_parse.h>
+#include  <seqan/random.h>
 #include  <seqan/sequence.h>
 #include  <seqan/seq_io.h>
 #include  <seqan/vcf.h>
@@ -49,6 +50,8 @@
 // Classes
 // ==========================================================================
 
+typedef seqan::Rng<> TRng;
+
 // --------------------------------------------------------------------------
 // Class MasonVariatorOptions
 // --------------------------------------------------------------------------
@@ -58,12 +61,17 @@ struct MasonVariatorOptions
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
 
+    // Seed for RNG.
+    int seed;
+
     // ----------------------------------------------------------------------
     // Input / Output Options
     // ----------------------------------------------------------------------
 
     // VCF file to import.
     seqan::CharString vcfInFile;
+    // FASTA file to import.
+    seqan::CharString fastaInFile;
     // VCF file to write out.
     seqan::CharString vcfOutFile;
     // FASTA file to write out with variations.
@@ -108,9 +116,199 @@ struct MasonVariatorOptions
     int maxSVSize;
 
     MasonVariatorOptions() :
+            verbosity(1), seed(0),
             snpRate(0), smallIndelRate(0), minSmallIndelSize(0), maxSmallIndelSize(0), svIndelRate(0),
             svInversionRate(0), svTranslocationRate(0), svDuplicationRate(0), minSVSize(0), maxSVSize(0)
     {}
+};
+
+void print(std::ostream & out, MasonVariatorOptions const & options)
+{
+    out << "__OPTIONS_____________________________________________________________________\n"
+        << "\n"
+        << "VCF IN               \t" << options.vcfInFile << "\n"
+        << "FASTA IN             \t" << options.fastaInFile << "\n"
+        << "SV SIZE TSV IN       \t" << options.inputSVSizeFile << "\n"
+        << "VCF OUT              \t" << options.vcfOutFile << "\n"
+        << "FASTA OUT            \t" << options.fastaOutFile << "\n"
+        << "\n"
+        << "NUM HAPLOTYPES       \t" << options.numHaplotypes << "\n"
+        << "HAPLOTYPE SEP        \t\"" << options.haplotypeSep << "\"\n"
+        << "\n"
+        << "SNP RATE             \t" << options.snpRate << "\n"
+        << "SMALL INDEL RATE     \t" << options.smallIndelRate << "\n"
+        << "\n"
+        << "MIN SMALL INDEL SIZE \t" << options.minSmallIndelSize << "\n"
+        << "MAX SMALL INDEL SIZE \t" << options.maxSmallIndelSize << "\n"
+        << "\n"
+        << "SV INDEL RATE        \t" << options.svIndelRate << "\n"
+        << "SV INVERSION RATE    \t" << options.svInversionRate << "\n"
+        << "SV TRANSLOCATION RATE\t" << options.svTranslocationRate << "\n"
+        << "SV DUPLICATION RATE  \t" << options.svDuplicationRate << "\n"
+        << "\n"
+        << "MIN SV SIZE          \t" << options.minSVSize << "\n"
+        << "MAX SV SIZE          \t" << options.maxSVSize << "\n"
+        << "\n";
+}
+
+// --------------------------------------------------------------------------
+// Class SnpRecord
+// --------------------------------------------------------------------------
+
+// Represents a SNP in one haplotype.
+
+struct SnpRecord
+{
+    // Reference id and position on the reference.
+    int rId;
+    int pos;
+
+    // The haplotype that this variation belongs to.
+    int haplotype;
+
+    // The target nucleotide.
+    char to;
+    
+    SnpRecord() : rId(-1), pos(-1), haplotype(-1), to('\0')
+    {}
+
+    SnpRecord(int haplotype, int rId, int pos, char to) :
+            rId(rId), pos(pos), haplotype(haplotype), to(to)
+    {}
+};
+
+// --------------------------------------------------------------------------
+// Class SmallIndelRecord
+// --------------------------------------------------------------------------
+
+// Represents a small indel.
+
+struct SmallIndelRecord
+{
+    // Reference id and position on the reference.
+    int rId;
+    int pos;
+
+    // The haplotype that this variation belongs to.
+    int haplotype;
+
+    // The size of the indel, negative numbers for deletions, positive numbers for insertions.
+    int size;
+
+    // The inserted sequence if any.
+    seqan::CharString seq;
+    
+    SmallIndelRecord() : rId(-1), pos(-1), haplotype(-1), size(0)
+    {}
+    
+    SmallIndelRecord(int haplotype, int rId, int pos, int size, seqan::CharString const & seq) :
+            rId(rId), pos(pos), haplotype(haplotype), size(size), seq(seq)
+    {}
+};
+
+// --------------------------------------------------------------------------
+// Class Variants
+// --------------------------------------------------------------------------
+
+// Contains the simulated variants.
+
+struct Variants
+{
+    seqan::String<SnpRecord> snps;
+    seqan::String<SmallIndelRecord> smallIndels;
+};
+
+// --------------------------------------------------------------------------
+// Class SmallVariantSimulator
+// --------------------------------------------------------------------------
+
+// Simulation of small variants.
+
+class SmallVariantSimulator
+{
+public:
+    // Random number generator.
+    TRng & rng;
+
+    // FAI Index for loading sequence contig-wise.
+    seqan::FaiIndex const & faiIndex;
+
+    // The variator options.
+    MasonVariatorOptions options;
+
+    SmallVariantSimulator(TRng & rng, seqan::FaiIndex const & faiIndex, MasonVariatorOptions const & options) :
+            rng(rng), faiIndex(faiIndex), options(options)
+    {}
+
+    // Simulate variants and write them to variants.
+    void run(Variants & variants, int haploNum)
+    {
+        for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
+            simulateContig(variants, haploNum, i);
+    }
+
+    // Perform simulation for one contig.
+    void simulateContig(Variants & variants, int haploNum, unsigned rId)
+    {
+        seqan::CharString seq;
+        if (readSequence(seq, faiIndex, rId) != 0)
+        {
+            std::cerr << "ERROR: Could not read sequence " << rId << " from FASTA file!\n";
+            return;
+        }
+
+        // For each base, compute the whether to simulate a SNP and/or small indel.
+        for (unsigned pos = 0; pos < length(seq); ++pos)
+        {
+            seqan::Pdf<seqan::Uniform<double> > pdf(0, 1);
+
+            // Perform experiment for SNP and small indel.
+            bool isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
+            double isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
+            while (isSnp && isIndel)  // TODO(holtgrew): Add limit?
+            {
+                isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
+                isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
+            }
+
+            // Simulate either SNP or indel.  In the case of a deletion, advance position such that there
+            // is no variation in the deleted sequence.
+            if (isSnp)
+            {
+                simulateSnp(variants, seq, haploNum, rId, pos);
+            }
+            else if (isIndel)
+            {
+                simulateSmallIndel(variants, seq, haploNum, rId, pos);
+                if (back(variants.smallIndels).size < 0)
+                    pos += -back(variants.smallIndels).size;
+            }
+        }
+    }
+
+    void simulateSnp(Variants & variants, seqan::CharString & seq, int haploNum, int rId, unsigned pos)
+    {
+        seqan::Dna5 from = seq[pos];
+        int toInt = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 2));
+        if (ordValue(from) <= toInt)
+            toInt += 1;
+        seqan::Dna5 to(toInt);
+        appendValue(variants.snps, SnpRecord(rId, pos, haploNum, to));
+    }
+
+    void simulateSmallIndel(Variants & variants, seqan::CharString & seq, int haploNum, int rId, unsigned pos)
+    {
+        seqan::CharString indelSeq;
+        reserve(indelSeq, options.maxSmallIndelSize);
+        int indelSize = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSmallIndelSize,
+                                                                        options.maxSmallIndelSize));
+        bool deletion = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1));
+        indelSize = deletion ? -indelSize : indelSize;
+        seqan::Pdf<seqan::Uniform<int> > pdf(0, 3);
+        for (int i = 0; i < indelSize; ++i)  // not executed in case of deleted sequence
+            appendValue(indelSeq, seqan::Dna5(pickRandomNumber(rng, pdf)));
+        appendValue(variants.smallIndels, SmallIndelRecord(haploNum, rId, pos, indelSize, indelSeq));
+    }
 };
 
 // ==========================================================================
@@ -137,8 +335,8 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     setCategory(parser, "Simulators");
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-ov\\fP \\fIOUT.vcf\\fP [\\fB-of\\fP \\fIOUT.fa\\fP]");
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-of\\fP \\fIOUT.fa\\fP");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-ov\\fP \\fIOUT.vcf\\fP [\\fB-of\\fP \\fIOUT.fa\\fP]");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-of\\fP \\fIOUT.fa\\fP");
     addDescription(parser,
                    "Either simulate variation and write out the result to VCF and FASTA files "
                    "or apply the variations from a VCF file and write the results to a FASTA file.");
@@ -167,6 +365,11 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     addOption(parser, seqan::ArgParseOption("iv", "in-vcf", "VCF file to load variations from.",
                                             seqan::ArgParseOption::INPUTFILE, "VCF"));
     setValidValues(parser, "in-vcf", "vcf");
+
+    addOption(parser, seqan::ArgParseOption("if", "in-fasta", "FASTA file with reference.",
+                                            seqan::ArgParseOption::INPUTFILE, "FASTA"));
+    setValidValues(parser, "in-fasta", "fasta fa");
+    setRequired(parser, "in-fasta");
 
     addOption(parser, seqan::ArgParseOption("it", "in-variant-tsv",
                                             "TSV file with variants to simulate.  See Section on the Variant TSV File below.",
@@ -208,41 +411,47 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "snp-rate", "0.0");
     setMaxValue(parser, "snp-rate", "1.0");
+    setDefaultValue(parser, "snp-rate", "0.0001");
 
     addOption(parser, seqan::ArgParseOption("", "small-indel-rate", "Small indel rate.",
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "small-indel-rate", "0.0");
     setMaxValue(parser, "small-indel-rate", "1.0");
+    setDefaultValue(parser, "small-indel-rate", "0.00005");
 
     addOption(parser, seqan::ArgParseOption("", "min-small-indel-size", "Minimal small indel size to simulate.",
                                             seqan::ArgParseOption::INTEGER, "LEN"));
     setMinValue(parser, "min-small-indel-size", "0");
-    setDefaultValue(parser, "min-small-indel-size", "50");
+    setDefaultValue(parser, "min-small-indel-size", "1");
 
     addOption(parser, seqan::ArgParseOption("", "max-small-indel-size", "Maximal small indel size to simulate.",
                                             seqan::ArgParseOption::INTEGER, "LEN"));
     setMinValue(parser, "max-small-indel-size", "0");
-    setDefaultValue(parser, "max-small-indel-size", "1000");
+    setDefaultValue(parser, "max-small-indel-size", "6");
 
     addOption(parser, seqan::ArgParseOption("", "sv-indel-rate", "Per-base SNP rate.",
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "sv-indel-rate", "0.0");
     setMaxValue(parser, "sv-indel-rate", "1.0");
+    setDefaultValue(parser, "sv-indel-rate", "0.0");
 
     addOption(parser, seqan::ArgParseOption("", "sv-inversion-rate", "Per-base SNP rate.",
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "sv-inversion-rate", "0.0");
     setMaxValue(parser, "sv-inversion-rate", "1.0");
+    setDefaultValue(parser, "sv-inversion-rate", "0.0");
 
     addOption(parser, seqan::ArgParseOption("", "sv-translocation-rate", "Per-base SNP rate.",
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "sv-translocation-rate", "0.0");
     setMaxValue(parser, "sv-translocation-rate", "1.0");
+    setDefaultValue(parser, "sv-translocation-rate", "0.0");
 
     addOption(parser, seqan::ArgParseOption("", "sv-duplication-rate", "Per-base SNP rate.",
                                             seqan::ArgParseOption::DOUBLE, "RATE"));
     setMinValue(parser, "sv-duplication-rate", "0.0");
     setMaxValue(parser, "sv-duplication-rate", "1.0");
+    setDefaultValue(parser, "sv-duplication-rate", "0.0");
 
     addOption(parser, seqan::ArgParseOption("", "min-sv-size", "Minimal SV size to simulate.",
                                             seqan::ArgParseOption::INTEGER, "LEN"));
@@ -259,7 +468,19 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     // ----------------------------------------------------------------------
 
     addTextSection(parser, "Simulation Details");
-    addText(parser, "The indel and SV sizes are picked uniformly at random from the size intervals.");
+
+    addText(parser,
+            "SNPs and small indels are simulated such that at each position, a random experiment is "
+            "performed whether to simulate either variation.  In case both variations are to be simulated, "
+            "the experiment is repeated.");
+
+    addText(parser, "The indel and SV sizes are picked uniformly at random from the argument size intervals.");
+
+    addText(parser,
+            "The simulation of haplotypes works as follows.  For small indels, the indel is placed into "
+            "one of the haplotypes that are to be simulated.  The exact haplotype is picked uniformly at "
+            "random.  For SNPs, we simulate a random base for each haplotype.  For at least one haplotype, "
+            "the base has to be different from the reference or the experiment is repeated.");
 
     // ----------------------------------------------------------------------
     // Examples Section
@@ -293,12 +514,34 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
         return res;
 
     // Extract option values.
+    options.verbosity = 1;
     if (isSet(parser, "quiet"))
         options.verbosity = 0;
     if (isSet(parser, "verbose"))
         options.verbosity = 2;
     if (isSet(parser, "very-verbose"))
         options.verbosity = 3;
+
+    getOptionValue(options.seed, parser, "seed");
+
+    getOptionValue(options.vcfInFile, parser, "in-vcf");
+    getOptionValue(options.fastaInFile, parser, "in-fasta");
+    getOptionValue(options.vcfOutFile, parser, "out-vcf");
+    getOptionValue(options.fastaOutFile, parser, "out-fasta");
+    getOptionValue(options.inputSVSizeFile, parser, "in-variant-tsv");
+
+    getOptionValue(options.numHaplotypes, parser, "num-haplotypes");
+    getOptionValue(options.haplotypeSep, parser, "haplotype-sep");
+    getOptionValue(options.snpRate, parser, "snp-rate");
+    getOptionValue(options.smallIndelRate, parser, "small-indel-rate");
+    getOptionValue(options.minSmallIndelSize, parser, "min-small-indel-size");
+    getOptionValue(options.maxSmallIndelSize, parser, "max-small-indel-size");
+    getOptionValue(options.svIndelRate, parser, "sv-indel-rate");
+    getOptionValue(options.svInversionRate, parser, "sv-inversion-rate");
+    getOptionValue(options.svTranslocationRate, parser, "sv-translocation-rate");
+    getOptionValue(options.svDuplicationRate, parser, "sv-duplication-rate");
+    getOptionValue(options.minSVSize, parser, "min-sv-size");
+    getOptionValue(options.maxSVSize, parser, "max-sv-size");
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -320,8 +563,69 @@ int main(int argc, char const ** argv)
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res == seqan::ArgumentParser::PARSE_ERROR;
 
-    std::cout << "MASON VARIATOR\n"
-              << "==============\n";
+    // Initialize random number generator.
+    TRng rng(options.seed);
 
+    std::cerr << "MASON VARIATOR\n"
+              << "==============\n\n";
+
+    print(std::cerr, options);
+
+    std::cerr << "\n__PREPARATION_________________________________________________________________\n"
+              << "\n";
+
+    std::cerr << "Loading Reference Index " << options.fastaInFile << " ...";
+    seqan::FaiIndex faiIndex;
+    if (read(faiIndex, toCString(options.fastaInFile)) != 0)
+    {
+        std::cerr << " FAILED (not fatal, we can just build it)\n";
+        std::cerr << "Building Index        " << options.fastaInFile << ".fai ...";
+        if (build(faiIndex, toCString(options.fastaInFile)) != 0)
+        {
+            std::cerr << "Could not build FAI index.\n";
+            return 1;
+        }
+        std::cerr << " OK\n";
+        seqan::CharString faiPath = options.fastaInFile;
+        append(faiPath, ".fai");
+        std::cerr << "Reference Index       " << faiPath << " ...";
+        if (write(faiIndex, toCString(faiPath)) != 0)
+        {
+            std::cerr << "Could not write FAI index we just built.\n";
+            return 1;
+        }
+        std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
+    }
+    else
+    {
+        std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
+    }
+
+    std::cerr << "\n__SIMULATION__________________________________________________________________\n"
+              << "\n";
+
+    std::cerr << "SNP/Small Indel Simulation ...";
+
+    SmallVariantSimulator smallSim(rng, faiIndex, options);
+    Variants variants;
+    for (int hId = 0; hId < options.numHaplotypes; ++hId)  // haplotypes
+        for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
+            smallSim.run(variants, hId);
+
+    std::cerr << " OK\n";
+    
+    std::cerr << "Structural Variation Simulation ... NOT IMPLEMENTED\n\n";
+
+    std::cerr << "__WRITING OUTPUT______________________________________________________________\n"
+              << "\n";
+
+    if (!empty(options.vcfOutFile))
+        std::cerr << "Writing VCF to " << options.vcfOutFile << "\n";
+    
+    if (!empty(options.fastaOutFile))
+        std::cerr << "Writing FASTA to " << options.fastaOutFile << "\n";
+
+    std::cerr << "\nDONE.\n";
+    
     return 0;
 }
