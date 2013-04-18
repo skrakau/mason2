@@ -81,6 +81,18 @@ public:
             _filename(filename), _mode(mode), _error(0), _isGood(true), _headerWritten(false),
             _context(header.sequenceNames, header.sampleNames)
     {
+        _open(filename, mode);
+    }
+
+    bool _open(char const * filename, Mode mode)
+    {
+        // Reset.
+        _filename = filename;
+        _mode = mode;
+        _error = 0;
+        _isGood = true;
+        _headerWritten = false;
+
         if (mode == READ)
         {
             _stream.reset(new std::fstream);
@@ -88,7 +100,7 @@ public:
             if (!_stream->good())
             {
                 _isGood = false;
-                return;
+                return false;
             }
             _reader.reset(new TReader_(*_stream));
 
@@ -106,10 +118,11 @@ public:
             if (!_stream->good())
             {
                 _isGood = false;
-                return;
+                return false;
             }
             _reader.reset();
         }
+        return true;
     }
 };
 
@@ -120,6 +133,15 @@ public:
 // ============================================================================
 // Functions
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Function open()
+// ----------------------------------------------------------------------------
+
+inline bool open(VcfStream & stream, char const * filename, VcfStream::Mode mode = VcfStream::READ)
+{
+    return stream._open(filename, mode);
+}
 
 // ----------------------------------------------------------------------------
 // Function readRecord()
