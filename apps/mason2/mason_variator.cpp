@@ -36,6 +36,9 @@
 // file and materialized into a FASTA file.
 // ==========================================================================
 
+// TODO(holtgrew): Add support for indel size TSV.
+// TODO(holtgrew): Add support for structural variants.
+
 #include  <seqan/arg_parse.h>
 #include  <seqan/random.h>
 #include  <seqan/sequence.h>
@@ -80,9 +83,6 @@ struct MasonVariatorOptions
     // Path to a TSV file where the first two columns giving the type of the SV to simulate and the size of the SV.
     // This overrides the simulation of SV from the sv*Rate parameters.
     seqan::CharString inputSVSizeFile;
-
-    // Separator for haplotype contigs in resulting FASTA file.
-    seqan::CharString haplotypeNameSep;
 
     // ----------------------------------------------------------------------
     // Haplotype / Allele Configuration
@@ -134,7 +134,6 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "SV SIZE TSV IN       \t" << options.inputSVSizeFile << "\n"
         << "VCF OUT              \t" << options.vcfOutFile << "\n"
         << "FASTA OUT            \t" << options.fastaOutFile << "\n"
-        << "HAPLOTYPE NAME SEP   \t" << options.haplotypeNameSep << "\n"
         << "\n"
         << "NUM HAPLOTYPES       \t" << options.numHaplotypes << "\n"
         << "HAPLOTYPE SEP        \t\"" << options.haplotypeSep << "\"\n"
@@ -957,7 +956,6 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.vcfOutFile, parser, "out-vcf");
     getOptionValue(options.fastaOutFile, parser, "out-fasta");
     getOptionValue(options.inputSVSizeFile, parser, "in-variant-tsv");
-    getOptionValue(options.haplotypeNameSep, parser, "haplotype-name-sep");
 
     getOptionValue(options.numHaplotypes, parser, "num-haplotypes");
     getOptionValue(options.haplotypeSep, parser, "haplotype-sep");
