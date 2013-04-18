@@ -167,14 +167,26 @@ struct SnpRecord
     int haplotype;
 
     // The target nucleotide.
-    char to;
-    
+    seqan::Dna5 to;
+
     SnpRecord() : rId(-1), pos(-1), haplotype(-1), to('\0')
     {}
 
     SnpRecord(int haplotype, int rId, int pos, char to) :
             rId(rId), pos(pos), haplotype(haplotype), to(to)
     {}
+
+    bool operator<(SnpRecord const & other) const
+    {
+        if (rId < other.rId || (rId == other.rId && pos < other.pos) ||
+            (rId == other.rId && pos == other.pos && haplotype < other.haplotype))
+            return true;
+    }
+
+    std::pair<int, int> getPos() const
+    {
+        return std::make_pair(rId, pos);
+    }
 };
 
 // --------------------------------------------------------------------------
@@ -197,13 +209,25 @@ struct SmallIndelRecord
 
     // The inserted sequence if any.
     seqan::CharString seq;
-    
+
     SmallIndelRecord() : rId(-1), pos(-1), haplotype(-1), size(0)
     {}
-    
+
     SmallIndelRecord(int haplotype, int rId, int pos, int size, seqan::CharString const & seq) :
             rId(rId), pos(pos), haplotype(haplotype), size(size), seq(seq)
     {}
+
+    bool operator<(SmallIndelRecord const & other) const
+    {
+        if (rId < other.rId || (rId == other.rId && pos < other.pos) ||
+            (rId == other.rId && pos == other.pos && haplotype < other.haplotype))
+            return true;
+    }
+
+    std::pair<int, int> getPos() const
+    {
+        return std::make_pair(rId, pos);
+    }
 };
 
 // --------------------------------------------------------------------------
@@ -240,15 +264,8 @@ public:
             rng(rng), faiIndex(faiIndex), options(options)
     {}
 
-    // Simulate variants and write them to variants.
-    void run(Variants & variants, int haploNum)
-    {
-        for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
-            simulateContig(variants, haploNum, i);
-    }
-
     // Perform simulation for one contig.
-    void simulateContig(Variants & variants, int haploNum, unsigned rId)
+    void simulateContig(Variants & variants, unsigned rId, int haploCount)
     {
         seqan::CharString seq;
         if (readSequence(seq, faiIndex, rId) != 0)
@@ -269,45 +286,56 @@ public:
             {
                 isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
                 isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
+                if (pos == 0)
+                    isIndel = false;  // No indel at beginning, complex VCF case.
             }
 
             // Simulate either SNP or indel.  In the case of a deletion, advance position such that there
             // is no variation in the deleted sequence.
             if (isSnp)
             {
-                simulateSnp(variants, seq, haploNum, rId, pos);
+                simulateSnp(variants, seq, haploCount, rId, pos);
             }
             else if (isIndel)
             {
-                simulateSmallIndel(variants, seq, haploNum, rId, pos);
+                simulateSmallIndel(variants, seq, haploCount, rId, pos);
                 if (back(variants.smallIndels).size < 0)
                     pos += -back(variants.smallIndels).size;
             }
         }
     }
 
-    void simulateSnp(Variants & variants, seqan::CharString & seq, int haploNum, int rId, unsigned pos)
+    void simulateSnp(Variants & variants, seqan::CharString & seq, int haploCount, int rId, unsigned pos)
     {
+        // We simulate an alternative base for each haplotype.
+
         seqan::Dna5 from = seq[pos];
-        int toInt = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 2));
-        if (ordValue(from) <= toInt)
-            toInt += 1;
-        seqan::Dna5 to(toInt);
-        appendValue(variants.snps, SnpRecord(rId, pos, haploNum, to));
+        for (int hId = 0; hId < haploCount; ++hId)
+        {
+            int toInt = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 2));
+            if (ordValue(from) <= toInt)
+                toInt += 1;
+            // std::cerr << hId << "\t" << rId << "\t" << pos << "\t" << from << "\t" << seqan::Dna5(toInt) << "\n";
+            SEQAN_ASSERT_NEQ((int)ordValue(from), toInt);
+            seqan::Dna5 to(toInt);
+            appendValue(variants.snps, SnpRecord(hId, rId, pos, to));
+        }
     }
 
-    void simulateSmallIndel(Variants & variants, seqan::CharString & seq, int haploNum, int rId, unsigned pos)
+    void simulateSmallIndel(Variants & variants, seqan::CharString & seq, int haploCount, int rId, unsigned pos)
     {
+        // Indels are simulated for one haplotype only.
+        int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         seqan::CharString indelSeq;
         reserve(indelSeq, options.maxSmallIndelSize);
         int indelSize = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSmallIndelSize,
-                                                                        options.maxSmallIndelSize));
+                                                                               options.maxSmallIndelSize));
         bool deletion = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1));
         indelSize = deletion ? -indelSize : indelSize;
         seqan::Pdf<seqan::Uniform<int> > pdf(0, 3);
         for (int i = 0; i < indelSize; ++i)  // not executed in case of deleted sequence
             appendValue(indelSeq, seqan::Dna5(pickRandomNumber(rng, pdf)));
-        appendValue(variants.smallIndels, SmallIndelRecord(haploNum, rId, pos, indelSize, indelSeq));
+        appendValue(variants.smallIndels, SmallIndelRecord(hId, rId, pos, indelSize, indelSeq));
     }
 };
 
@@ -547,6 +575,236 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 }
 
 // --------------------------------------------------------------------------
+// Function simulateContig()
+// --------------------------------------------------------------------------
+
+int simulateContig(SmallVariantSimulator & sim,
+                   MasonVariatorOptions const & options,
+                   seqan::FaiIndex const & faiIndex,
+                   int rId)
+{
+    if (options.verbosity >= 1)
+        std::cerr << "  " << sequenceName(faiIndex, rId) << "\n";
+
+    // Simulate variants.
+    Variants variants;
+    sim.simulateContig(variants, rId, options.numHaplotypes);
+    if (options.verbosity >= 1)
+        std::cerr << "  snps:         " << length(variants.snps) << "\n"
+                  << "  small indels: " << length(variants.smallIndels) << "\n";
+
+    // Load contig seq.
+    seqan::Dna5String contig;
+    if (readSequence(contig, faiIndex, rId) != 0)
+    {
+        std::cerr << "Could not read contig seq " << rId << "\n";
+        return 1;
+    }
+
+    // Open VCF stream to write to.
+    seqan::VcfStream vcfStream(toCString(options.vcfOutFile), seqan::VcfStream::WRITE);
+    if (!isGood(vcfStream))
+    {
+        std::cerr << "Could not open " << options.vcfOutFile << " for writing.\n";
+        return 1;
+    }
+    // Copy over sequence names.
+    for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
+        appendName(*vcfStream._context.sequenceNames,
+                   sequenceName(faiIndex, i),
+                   vcfStream._context.sequenceNamesCache);
+    // Copy over sample names.
+    appendName(*vcfStream._context.sampleNames, "simulated", vcfStream._context.sampleNamesCache);
+    // TODO(holtgrew): Write header.
+
+    // Current index in snp/small indel array.
+    unsigned snpsIdx = 0;
+    unsigned smallIndelIdx = 0;
+    // Current SNP record, default to sentinel.
+    SnpRecord snpRecord;
+    snpRecord.rId = seqan::maxValue<int>();
+    if (snpsIdx < length(variants.snps))
+        snpRecord = variants.snps[snpsIdx++];
+    // Current small indel record, default to sentinel.
+    SmallIndelRecord smallIndelRecord;
+    smallIndelRecord.rId = seqan::maxValue<int>();
+    if (smallIndelIdx < length(variants.smallIndels))
+        smallIndelRecord = variants.smallIndels[smallIndelIdx++];
+    while (snpRecord.rId != seqan::maxValue<int>() || smallIndelRecord.rId != seqan::maxValue<int>())
+    {
+        SEQAN_ASSERT(snpRecord.getPos() != smallIndelRecord.getPos());  // are generated indendently
+
+        // TODO(holtgrew): Extract SNP and small indel generation in their own methods.
+        if (snpRecord.getPos() < smallIndelRecord.getPos())  // process SNP records
+        {
+            if (options.verbosity >= 2)
+                std::cerr << "  snpRecord record.\n";
+
+            // Store information used below.
+            // std::cerr << "from = " << contig[snpRecord.pos] << "\n";
+            seqan::Dna5 from = contig[snpRecord.pos];
+            std::pair<int, int> pos = snpRecord.getPos();
+
+            // Get the value of each haplotype at the position.
+            seqan::String<bool> inTos;
+            resize(inTos, 4, false);
+            seqan::Dna5String tos;
+            resize(tos, options.numHaplotypes, from);
+            do
+            {
+                SEQAN_ASSERT(snpRecord.to != from);
+                tos[snpRecord.haplotype] = snpRecord.to;
+                inTos[ordValue(seqan::Dna5(snpRecord.to))] = true;
+
+                if (snpsIdx >= length(variants.snps))
+                    snpRecord.rId = seqan::maxValue<int>();
+                else
+                    snpRecord = variants.snps[snpsIdx++];
+            }
+            while (snpRecord.rId != seqan::maxValue<int>() &&
+                   snpsIdx < length(variants.snps) &&
+                   snpRecord.getPos() == pos);
+
+            // Create VCF vcfRecord.
+            seqan::VcfRecord vcfRecord;
+            vcfRecord.chromId = rId;
+            vcfRecord.pos = pos.second;
+            // TODO(holtgrew): Generate an id?
+            appendValue(vcfRecord.ref, from);
+            for (unsigned i = 0; i < 4; ++i)
+            {
+                if (!inTos[i])
+                    continue;  // no ALT
+                if (!empty(vcfRecord.alt))
+                    appendValue(vcfRecord.alt, ',');
+                appendValue(vcfRecord.alt, seqan::Dna5(i));
+            }
+            vcfRecord.filter = "PASS";
+            vcfRecord.info = ".";
+            // Build genotype infos.
+            appendValue(vcfRecord.genotypeInfos, "");
+            for (int hId = 0; hId < options.numHaplotypes; ++hId)
+            {
+                if (!empty(vcfRecord.genotypeInfos[0]))
+                    appendValue(vcfRecord.genotypeInfos[0], '|');
+                if (tos[hId] == vcfRecord.ref[0])
+                {
+                    appendValue(vcfRecord.genotypeInfos[0], '0');
+                }
+                else
+                {
+                    char buffer[20];
+                    for (unsigned i = 0; i < length(vcfRecord.alt); i += 2)
+                        if (tos[hId] == vcfRecord.alt[i])
+                        {
+                            snprintf(buffer, 19, "%d", 1 + i / 2);
+                            append(vcfRecord.genotypeInfos[0], buffer);
+                        }
+                }
+            }
+
+            // Write out VCF record.
+            if (writeRecord(vcfStream, vcfRecord) != 0)
+            {
+                std::cerr << "ERROR: Problem writing to " << options.vcfOutFile << "\n";
+                return 1;
+            }
+        }
+        else  // process small indel records
+        {
+            SEQAN_ASSERT_NEQ(smallIndelRecord.pos, 0);   // Not simulated, VCF complexer.
+            
+            // Collect small indel records at the same position.
+            seqan::String<SmallIndelRecord> records;
+            do
+            {
+                if (options.verbosity >= 2)
+                    std::cerr << "INDEL\t"
+                              << smallIndelRecord.haplotype << "\t"
+                              << smallIndelRecord.rId << "\t"
+                              << smallIndelRecord.pos << "\t"
+                              << smallIndelRecord.size << "\t"
+                              << smallIndelRecord.seq << "\n";
+                appendValue(records, smallIndelRecord);
+
+                if (smallIndelIdx >= length(variants.smallIndels))
+                    smallIndelRecord.rId = seqan::maxValue<int>();
+                else
+                    smallIndelRecord = variants.smallIndels[smallIndelIdx++];
+            }
+            while (smallIndelRecord.rId != seqan::maxValue<int>() &&
+                   smallIndelIdx < length(variants.smallIndels) &&
+                   smallIndelRecord.getPos() == variants.smallIndels[smallIndelIdx].getPos());
+            SEQAN_ASSERT_NOT(empty(records));
+
+
+            // Create VCF record.
+            seqan::VcfRecord vcfRecord;
+            vcfRecord.chromId = rId;
+            vcfRecord.pos = front(records).pos;
+            // TODO(holtgrew): Generate an id?
+            vcfRecord.filter = "PASS";
+            vcfRecord.info = ".";
+            // Build genotype infos.
+
+            // Compute the number of bases in the REF column (1 in case of insertion and (k + 1) in the case of a
+            // deletion of length k.
+            int numRef = 0;
+            for (unsigned i = 0; i < length(records); ++i)
+            {
+                SEQAN_ASSERT_NEQ(records[i].size, 0);
+                if (records[i].size > 0)
+                    numRef = std::max(numRef, 1);  // assign 1 if 0
+                else  // if (records[i].size < 0)
+                    numRef = std::max(numRef, 1 - records[i].size);
+            }
+            append(vcfRecord.ref, infix(contig, vcfRecord.pos - 1, vcfRecord.pos - 1 + numRef));
+
+            // Compute ALT columns and a map to the ALT.
+            seqan::String<int> toIds;
+            resize(toIds, options.numHaplotypes, 0);
+            for (unsigned i = 0; i < length(records); ++i)
+            {
+                if (i > 0)
+                    appendValue(vcfRecord.alt, ',');
+                toIds[records[i].haplotype] = i + 1;
+                if (records[i].size > 0)  // insertion
+                {
+                    appendValue(vcfRecord.alt, vcfRecord.ref[0]);
+                    append(vcfRecord.alt, records[i].seq);
+                    append(vcfRecord.alt, suffix(vcfRecord.ref, 1));
+                }
+                else  // deletion
+                {
+                    appendValue(vcfRecord.alt, vcfRecord.ref[0]);
+                    append(vcfRecord.alt, suffix(vcfRecord.ref, 1 - records[i].size));
+                }
+            }
+
+            // Create genotype infos.
+            appendValue(vcfRecord.genotypeInfos, "");
+            for (int i = 0; i < options.numHaplotypes; ++i)
+            {
+                if (i > 0)
+                    appendValue(vcfRecord.genotypeInfos[0], '|');
+                char buffer[20];
+                snprintf(buffer, 19, "%d", toIds[i]);
+                append(vcfRecord.genotypeInfos[0], buffer);
+            }
+
+            // Write out VCF record.
+            if (writeRecord(vcfStream, vcfRecord) != 0)
+            {
+                std::cerr << "ERROR: Problem writing to " << options.vcfOutFile << "\n";
+                return 1;
+            }
+        }
+    }
+
+    // Apply variants to contigs.
+}
+
+// --------------------------------------------------------------------------
 // Function parseCommandLine()
 // --------------------------------------------------------------------------
 
@@ -604,15 +862,11 @@ int main(int argc, char const ** argv)
     std::cerr << "\n__SIMULATION__________________________________________________________________\n"
               << "\n";
 
-    std::cerr << "SNP/Small Indel Simulation ...";
+    std::cerr << "SNP/Small Indel Simulation:\n";
 
     SmallVariantSimulator smallSim(rng, faiIndex, options);
-    Variants variants;
-    for (int hId = 0; hId < options.numHaplotypes; ++hId)  // haplotypes
-        for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
-            smallSim.run(variants, hId);
-
-    std::cerr << " OK\n";
+    for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
+        simulateContig(smallSim, options, faiIndex, rId);
     
     std::cerr << "Structural Variation Simulation ... NOT IMPLEMENTED\n\n";
 
