@@ -36,9 +36,13 @@
 // file and materialized into a FASTA file.
 // ==========================================================================
 
-// TODO(holtgrew): Add support for indel size TSV.
+// TODO(holtgrew): Currently, inserted sequence is picked at random, we could also give an insertion database.
+// TODO(holtgrew): Add support for SV size TSV.
 // TODO(holtgrew): Currently, there only is support for left-to-right translocations.
 // TODO(holtgrew): Allow inversion in translocation.
+// TODO(holtgrew): Add support for parsing VCF.
+// TODO(holtgrew): What about shortcuts for SV duplications with target?
+// TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
 
 #include  <seqan/arg_parse.h>
 #include  <seqan/random.h>
@@ -552,8 +556,6 @@ public:
 // Class SmallVariantSimulator
 // --------------------------------------------------------------------------
 
-// TODO(holtgrew): Simulate different SNPs/small variations for duplications.
-
 // Simulation of small variants.
 
 class SmallVariantSimulator
@@ -622,13 +624,16 @@ public:
             // Perform experiment for SNP and small indel.
             bool isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
             double isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
-            while (isSnp && isIndel)  // TODO(holtgrew): Add limit?
+            int const MAX_TRIES = 1000;
+            for (int tryNo = 0; isSnp && isIndel && (tryNo < MAX_TRIES); ++tryNo)
             {
                 isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
                 isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
                 if (pos == 0)
                     isIndel = false;  // No indel at beginning, complex VCF case.
             }
+            if (tryNo == MAX_TRIES)  // picked SNP and indel for MAX_TRIES time, pick none
+                isSnp = isIndel = false;
 
             // Simulate either SNP or indel.  In the case of a deletion, advance position such that there
             // is no variation in the deleted sequence.
@@ -778,7 +783,6 @@ public:
         // Simulate variants.
         Variants variants;
         svSim.simulateContig(variants, rId, options.numHaplotypes);
-        // TODO(holtgrew): Do we really have to sort the SV variants if we only simulate intra-contig variations?
         std::sort(begin(variants.svRecords, seqan::Standard()),
                   end(variants.svRecords, seqan::Standard()));
         smallSim.simulateContig(variants, rId, options.numHaplotypes);
@@ -936,10 +940,17 @@ public:
                smallIndelRecord.rId != seqan::maxValue<int>() ||
                svRecord.rId != seqan::maxValue<int>())
         {
-            SEQAN_ASSERT(snpRecord.getPos() != smallIndelRecord.getPos());  // are generated indendently
+            if (snpRecord.rId != seqan::maxValue<int>() && smallIndelRecord.rId != seqan::maxValue<int>())
+                SEQAN_ASSERT(snpRecord.getPos() != smallIndelRecord.getPos());  // are generated indendently
+            if (snpRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
+                SEQAN_ASSERT(svRecord.getPos() != svRecord.getPos());  // are generated indendently
+            if (smallIndelRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
+                SEQAN_ASSERT(smallIndelRecord.getPos() != svRecord.getPos());  // are generated indendently
+            SEQAN_ASSERT_NEQ(snpRecord.pos, 0);   // Not simulated, VCF complexer.
+            SEQAN_ASSERT_NEQ(svRecord.pos, 0);   // Not simulated, VCF complexer.
             SEQAN_ASSERT_NEQ(smallIndelRecord.pos, 0);   // Not simulated, VCF complexer.
 
-            // TODO(holtgrew): Extract SNP and small indel generation in their own methods.
+            // Structure of if/else statement is (1) SNP, (2) small indel, (3) structural variants.
             if (snpRecord.getPos() < smallIndelRecord.getPos() &&
                 snpRecord.getPos() < svRecord.getPos())  // process SNP records
             {
@@ -960,21 +971,23 @@ public:
 
                 if (svRecord.kind == StructuralVariantRecord::INDEL)
                 {
-                    // std::cerr << "indel" << "\n";
+                    if (_writeVcfIndel(contig, svRecord) != 0)
+                        return 1;
                 }
                 else if (svRecord.kind == StructuralVariantRecord::INVERSION)
                 {
-                    // std::cerr << "inversion" << "\n";
+                    if (_writeVcfInversion(contig, svRecord) != 0)
+                        return 1;
                 }
                 else if (svRecord.kind == StructuralVariantRecord::TRANSLOCATION)
                 {
-                    // std::cerr << "translocation" << "\n";
                     if (_writeVcfTranslocation(contig, svRecord) != 0)
                         return 1;
                 }
                 else if (svRecord.kind == StructuralVariantRecord::DUPLICATION)
                 {
-                    // std::cerr << "duplication" << "\n";
+                    if (_writeVcfDuplication(contig, svRecord) != 0)
+                        return 1;
                 }
 
                 if (svIdx >= length(variants.svRecords))
@@ -1160,10 +1173,73 @@ public:
         return 0;
     }
 
+    int _writeVcfIndel(seqan::Dna5String const & contig,
+                       StructuralVariantRecord const & svRecord)
+    {
+        // TODO(holtgrew): Large indels can be represented by <INS> and <DEL> and should be.
+        if (options.verbosity >= 2)
+            std::cerr << "indel\t" << svRecord << "\n";
+
+        // Create VCF record.
+        seqan::VcfRecord vcfRecord;
+        vcfRecord.chromId = svRecord.rId;
+        vcfRecord.pos = svRecord.pos;
+        // TODO(holtgrew): Generate an id?
+        vcfRecord.filter = "PASS";
+        std::stringstream ss;
+        if (svRecord.size > 0)
+            ss << "SVTYPE=INS";
+        else
+            ss << "SVTYPE=DEL";
+        ss << ";SVLEN=" << svRecord.size;
+        vcfRecord.info = ss.str();
+
+        // Compute the number of bases in the REF column (1 in case of insertion and (k + 1) in the case of a
+        // deletion of length k.
+        int numRef;
+        if (svRecord.size > 0)
+            numRef = 1;
+        else
+            numRef = 1 - svRecord.size;
+        append(vcfRecord.ref, infix(contig, vcfRecord.pos - 1, vcfRecord.pos - 1 + numRef));
+
+        // Compute ALT columns and a map to the ALT.
+        if (svRecord.size > 0)  // insertion
+        {
+            appendValue(vcfRecord.alt, vcfRecord.ref[0]);
+            append(vcfRecord.alt, svRecord.seq);
+        }
+        else
+        {
+            appendValue(vcfRecord.alt, vcfRecord.ref[0]);
+            append(vcfRecord.alt, suffix(vcfRecord.ref, 1 - svRecord.size));
+        }
+
+        // Create genotype infos.
+        appendValue(vcfRecord.genotypeInfos, "");
+        for (int i = 0; i < options.numHaplotypes; ++i)
+        {
+            if (i > 0)
+                appendValue(vcfRecord.genotypeInfos[0], '|');
+            if (svRecord.haplotype == i)
+                appendValue(vcfRecord.genotypeInfos[0], '1');
+            else
+                appendValue(vcfRecord.genotypeInfos[0], '0');
+        }
+
+        // Write out VCF record.
+        if (writeRecord(vcfStream, vcfRecord) != 0)
+        {
+            std::cerr << "ERROR: Problem writing to " << options.vcfOutFile << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
     int _writeVcfTranslocation(seqan::Dna5String const & contig,
                                StructuralVariantRecord const & svRecord)
     {
-        // Create left and right of cut and paste position.
+        // In this function, we will create VCF records left and right of both cut positions and of the paste position.
         seqan::VcfRecord leftOfCutL, rightOfCutL, leftOfCutR, rightOfCutR, leftOfPaste, rightOfPaste;
         // CHROM ID
         leftOfCutL.chromId = svRecord.rId;
@@ -1212,6 +1288,7 @@ public:
         rightOfCutR.filter = "PASS";
         leftOfPaste.filter = "PASS";
         rightOfPaste.filter = "PASS";
+        // INFO
         leftOfCutL.info = "SVTYPE=BND";
         rightOfCutL.info = "SVTYPE=BND";
         leftOfCutR.info = "SVTYPE=BND";
@@ -1268,6 +1345,85 @@ public:
 
         return 0;
     }
+
+    int _writeVcfInversion(seqan::Dna5String const & contig,
+                           StructuralVariantRecord const & svRecord)
+    {
+        if (options.verbosity >= 2)
+            std::cerr << "inversion\t" << svRecord << "\n";
+        seqan::VcfRecord vcfRecord;
+
+        vcfRecord.chromId = svRecord.rId;
+        vcfRecord.pos = svRecord.pos;
+        // TODO(holtgrew): Generate an id?
+        appendValue(vcfRecord.ref, contig[vcfRecord.pos]);
+        vcfRecord.alt = "<INV>";
+        vcfRecord.filter = "PASS";
+        std::stringstream ss;
+        ss << "SVTYPE=INV;END=" << (svRecord.pos + svRecord.size) << ";SVLEN=" << svRecord.size;
+        vcfRecord.info = ss.str();
+
+        // Create genotype infos.
+        appendValue(vcfRecord.genotypeInfos, "");
+        for (int i = 0; i < options.numHaplotypes; ++i)
+        {
+            if (i > 0)
+                appendValue(vcfRecord.genotypeInfos[0], '|');
+            if (svRecord.haplotype == i)
+                appendValue(vcfRecord.genotypeInfos[0], '1');
+            else
+                appendValue(vcfRecord.genotypeInfos[0], '0');
+        }
+
+        // Write out VCF record.
+        if (writeRecord(vcfStream, vcfRecord) != 0)
+        {
+            std::cerr << "ERROR: Problem writing to " << options.vcfOutFile << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
+    int _writeVcfDuplication(seqan::Dna5String const & contig,
+                             StructuralVariantRecord const & svRecord)
+    {
+        // TODO(holtgrew): Large indels can be represented by <INS> and <DEL> and should be.
+        if (options.verbosity >= 2)
+            std::cerr << "duplication\t" << svRecord << "\n";
+
+        // Create VCF record.
+        seqan::VcfRecord vcfRecord;
+        vcfRecord.chromId = svRecord.rId;
+        vcfRecord.pos = svRecord.pos;
+        // TODO(holtgrew): Generate an id?
+        vcfRecord.filter = "PASS";
+        std::stringstream ss;
+        ss << "SVTYPE=DUP;SVLEN=" << svRecord.size << ";END=" << svRecord.pos + svRecord.size;
+        vcfRecord.info = ss.str();
+        appendValue(vcfRecord.ref, contig[vcfRecord.pos]);
+        vcfRecord.alt = "<DUP>";
+
+        // Create genotype infos.
+        appendValue(vcfRecord.genotypeInfos, "");
+        for (int i = 0; i < options.numHaplotypes; ++i)
+        {
+            if (i > 0)
+                appendValue(vcfRecord.genotypeInfos[0], '|');
+            if (svRecord.haplotype == i)
+                appendValue(vcfRecord.genotypeInfos[0], '1');
+            else
+                appendValue(vcfRecord.genotypeInfos[0], '0');
+        }
+
+        // Write out VCF record.
+        if (writeRecord(vcfStream, vcfRecord) != 0)
+        {
+            std::cerr << "ERROR: Problem writing to " << options.vcfOutFile << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
 };
 
 // ==========================================================================
