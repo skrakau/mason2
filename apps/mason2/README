@@ -1,0 +1,16 @@
+Known Issues
+------------
+
+STRUCTURAL VARIANT SIMULATION
+
+The simulation of structural variants (SVs) is very limited.  Currently, SV
+are simulated non-overlapping.  This means that if there is an inversion of
+[b,e) in the genome then there is no SV within this interval.  The same is
+true for SV indels.  However, there can be SNPs or small indels in this
+region.  For translocation or duplications, if there is a translocation of
+[a,b) to c then there will be no additional SV between the left and right end
+of the source and desination.
+
+There will be no overlapping small indels simulated with the breakends of SVs
+and no indel in the bases adjacent to the breakend.  There is at least one
+base between two breakends.

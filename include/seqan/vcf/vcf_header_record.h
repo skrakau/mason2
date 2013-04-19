@@ -59,6 +59,10 @@ public:
 
     VcfHeaderRecord()
     {}
+
+    VcfHeaderRecord(CharString const & key, CharString const & value) :
+            key(key), value(value)
+    {}
 };
 
 // ============================================================================
