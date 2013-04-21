@@ -42,7 +42,7 @@
 // TODO(holtgrew): Add support for parsing VCF.
 // TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
-// TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event?
+// TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event? Per-base is OK, I guess, only has to be documented properly.
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
