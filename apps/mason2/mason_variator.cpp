@@ -37,7 +37,6 @@
 // ==========================================================================
 
 // TODO(holtgrew): Currently, inserted sequence is picked at random, we could also give an insertion database.
-// TODO(holtgrew): Add support for SV size TSV.
 // TODO(holtgrew): Currently, there only is support for left-to-right translocations.
 // TODO(holtgrew): Allow inversion in translocation.
 // TODO(holtgrew): Add support for parsing VCF.
@@ -139,7 +138,7 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
 {
     out << "__OPTIONS_____________________________________________________________________\n"
         << "\n"
-        << "VCF IN               \t" << options.vcfInFile << "\n"
+        // << "VCF IN               \t" << options.vcfInFile << "\n"
         << "FASTA IN             \t" << options.fastaInFile << "\n"
         << "SV SIZE TSV IN       \t" << options.inputSVSizeFile << "\n"
         << "VCF OUT              \t" << options.vcfOutFile << "\n"
@@ -375,6 +374,12 @@ struct StructuralVariantRecord
                 return -1;
         }
     }
+
+    // Return true if this SV overlaps with other within one bp.
+    bool overlapsWith(StructuralVariantRecord const & other) const
+    {
+        return (other.pos <= endPosition()) && (pos <= other.endPosition());
+    }
 };
 
 inline std::ostream & operator<<(std::ostream & out, StructuralVariantRecord const & record)
@@ -427,7 +432,7 @@ struct Variants
 // Class StructuralVariantSimulator
 // --------------------------------------------------------------------------
 
-// Simulation of structural variants.
+// Simulation of structural variants given error rates.
 
 class StructuralVariantSimulator
 {
@@ -441,10 +446,50 @@ public:
     // The variator options.
     MasonVariatorOptions options;
 
+    // Structural variation records.
+    seqan::String<VariationSizeRecord> const & variationSizeRecords;
+    seqan::String<int> variationToContig;
+
     StructuralVariantSimulator(TRng & rng, seqan::FaiIndex const & faiIndex,
+                               seqan::String<VariationSizeRecord> const & variationSizeRecords,
                                MasonVariatorOptions const & options) :
-            rng(rng), faiIndex(faiIndex), options(options)
-    {}
+            rng(rng), faiIndex(faiIndex), variationSizeRecords(variationSizeRecords), options(options)
+    {
+        _distributeVariations();
+    }
+
+    // Distribute variations to contigs.
+    void _distributeVariations()
+    {
+        // Build prefix sume for distributing variations to contig proportional to the length.
+        seqan::String<__int64> limits;
+        appendValue(limits, 0);
+        for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
+            appendValue(limits, back(limits) + sequenceLength(faiIndex, i));
+        __int64 lengthSum = back(limits);
+
+        if (options.verbosity >= 3)
+        {
+            for (unsigned i = 0; i < length(limits); ++i)
+                std::cerr << "limit\t" << i << "\t" << limits[i] << "\n";
+            std::cerr << "length sum\t" << lengthSum << "\n";
+        }
+
+        for (unsigned i = 0; i < length(variationSizeRecords); ++i)
+        {
+            __int64 x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<__int64> >(0, lengthSum - 1));
+            if (options.verbosity >= 3)
+                std::cerr << "  x == " << x << "\n";
+            for (unsigned j = 0; j + 1 < length(limits); ++j)
+                if (x >= limits[j] && x < limits[j + 1])
+                {
+                    if (options.verbosity >= 3)
+                        std::cerr << "==> distributing " << i << " to " << j << "\n";
+                    appendValue(variationToContig, j);
+                    break;
+                }
+        }
+    }
 
     void simulateContig(Variants & variants, unsigned rId, int haploCount)
     {
@@ -455,6 +500,79 @@ public:
             return;
         }
 
+        if (!empty(options.inputSVSizeFile))
+            _simulateFromSizes(variants, rId, haploCount, seq);
+        else
+            _simulateFromRates(variants, rId, haploCount, seq);
+    }
+
+    // Simulate the variants given variation types and kinds.
+    void _simulateFromSizes(Variants & variants, unsigned rId, int haploCount, seqan::CharString const & seq)
+    {
+        // Picking SVs in a non-overlapping manner without any biases is too complicated to implement for a simulator.
+        // Instead, we simulate the position uniformly at random and rerun picking the positions if we overlap with one
+        // of the existing SVs within one base pair.  We impose a maximal number of retries of 1000 and stop for this
+        // chromosome with a warning.  This leads to a quadratic running time but should be OK since we only need to
+        // read hundreds of SV records from TSV at most.
+        
+        for (unsigned i = 0; i < length(variationSizeRecords); ++i)
+        {
+            VariationSizeRecord const & record = variationSizeRecords[i];
+            int const MAX_TRIES = 1000;
+            int tries = 0;
+            for (; tries < MAX_TRIES; ++tries)
+            {
+                int pos = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, length(seq) - 1));
+
+                switch (record.kind)
+                {
+                    case VariationSizeRecord::INDEL:
+                        if (!simulateSVIndel(variants, haploCount, rId, pos, record.size))
+                            continue;
+                        break;
+                    case VariationSizeRecord::INVERSION:
+                        if (!simulateInversion(variants, haploCount, rId, pos, record.size))
+                            continue;
+                        break;
+                    case VariationSizeRecord::TRANSLOCATION:
+                        if (!simulateTranslocation(variants, haploCount, rId, pos, record.size))
+                            continue;
+                        break;
+                    case VariationSizeRecord::DUPLICATION:
+                        if (!simulateDuplication(variants, haploCount, rId, pos, record.size))
+                            continue;
+                        break;
+                    default:
+                        SEQAN_FAIL("Invalid SV type from TSV file!");
+                }
+
+                // Check whether the variant fits.
+                bool variantFits = true;
+                for (unsigned j = 0; j + 1 < length(variants.svRecords); ++j)
+                    if (back(variants.svRecords).overlapsWith(variants.svRecords[j]))
+                    {
+                        variantFits = false;
+                        break;
+                    }
+                if (!variantFits)
+                    eraseBack(variants.svRecords);
+                else
+                    break;
+            }
+            if (tries == MAX_TRIES)
+            {
+                std::cerr << "WARNING: Could not place variant " << i << " for contig " << rId << " giving up for this contig.\n";
+                return;
+            }
+        }
+
+        // Sort simulated variants.
+        std::sort(begin(variants.svRecords, seqan::Standard()), end(variants.svRecords, seqan::Standard()));
+    }
+
+    // Simulate the variants given per-position error rates.
+    void _simulateFromRates(Variants & variants, unsigned rId, int haploCount, seqan::CharString const & seq)
+    {
         // For each base, compute the whether to simulate a SNP and/or small indel.
         for (unsigned pos = 0; pos < length(seq); ++pos)
         {
@@ -475,28 +593,30 @@ public:
             if (!isIndel && !isInversion && !isTranslocation && !isDuplication)
                 continue;  // no variant picked
 
+            int size = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSVSize,
+                                                                              options.maxSVSize));
             if (isIndel)
             {
-                if (!simulateSVIndel(variants, haploCount, rId, pos))
+                if (!simulateSVIndel(variants, haploCount, rId, pos, size))
                     continue;
                 if (back(variants.svRecords).size < 0)
                     pos += -back(variants.svRecords).size + 1;
             }
             else if (isInversion)
             {
-                if (!simulateInversion(variants, haploCount, rId, pos))
+                if (!simulateInversion(variants, haploCount, rId, pos, size))
                     continue;
                 pos += back(variants.svRecords).size + 1;
             }
             else if (isTranslocation)
             {
-                if (!simulateTranslocation(variants, haploCount, rId, pos))
+                if (!simulateTranslocation(variants, haploCount, rId, pos, size))
                     continue;
                 pos = back(variants.svRecords).targetPos + 1;
             }
             else if (isDuplication)
             {
-                if (!simulateDuplication(variants, haploCount, rId, pos))
+                if (!simulateDuplication(variants, haploCount, rId, pos, size))
                     continue;
                 pos = back(variants.svRecords).targetPos + 1;
             }
@@ -506,42 +626,35 @@ public:
         }
     }
 
-    bool simulateSVIndel(Variants & variants, int haploCount, int rId, unsigned pos)
+    bool simulateSVIndel(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
         // Indels are simulated for one haplotype only.
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         seqan::CharString indelSeq;
         reserve(indelSeq, options.maxSVSize);
-        int indelSize = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSVSize,
-                                                                               options.maxSVSize));
-        bool deletion = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1));
-        if (deletion && (pos + indelSize) > (int)sequenceLength(faiIndex, rId))
+        bool deletion = (size < 0);
+        if (deletion && (pos + size) > (int)sequenceLength(faiIndex, rId))
             return false;  // not enough space at the end
-        indelSize = deletion ? -indelSize : indelSize;
         seqan::Pdf<seqan::Uniform<int> > pdf(0, 3);
-        for (int i = 0; i < indelSize; ++i)  // not executed in case of deleted sequence
+        for (int i = 0; i < size; ++i)  // not executed in case of deleted sequence
             appendValue(indelSeq, seqan::Dna5(pickRandomNumber(rng, pdf)));
         appendValue(variants.svRecords, StructuralVariantRecord(
-                StructuralVariantRecord::INDEL, hId, rId, pos, indelSize));
+                StructuralVariantRecord::INDEL, hId, rId, pos, size));
         back(variants.svRecords).seq = indelSeq;
         return true;
     }
 
-    bool simulateInversion(Variants & variants, int haploCount, int rId, unsigned pos)
+    bool simulateInversion(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
-        int size = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSVSize,
-                                                                          options.maxSVSize));
         appendValue(variants.svRecords, StructuralVariantRecord(
                 StructuralVariantRecord::INVERSION, hId, rId, pos, size));
         return true;
     }
 
-    bool simulateTranslocation(Variants & variants, int haploCount, int rId, unsigned pos)
+    bool simulateTranslocation(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
-        int size = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSVSize,
-                                                                          options.maxSVSize));
         int tPos = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(pos + size + options.minSVSize,
                                                                           pos + size + options.maxSVSize));
         appendValue(variants.svRecords, StructuralVariantRecord(
@@ -549,9 +662,9 @@ public:
         return true;
     }
 
-    bool simulateDuplication(Variants & variants, int haploCount, int rId, unsigned pos)
+    bool simulateDuplication(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
-        if (!simulateTranslocation(variants, haploCount, rId, pos))
+        if (!simulateTranslocation(variants, haploCount, rId, pos, size))
             return false;
         back(variants.svRecords).kind = StructuralVariantRecord::DUPLICATION;
         return true;
@@ -774,7 +887,7 @@ public:
         // Actually perform the variant simulation.
         if (options.verbosity >= 1)
             std::cerr << "\nSimulation...\n";
-        StructuralVariantSimulator svSim(rng, faiIndex, options);
+        StructuralVariantSimulator svSim(rng, faiIndex, variationSizeRecords, options);
         SmallVariantSimulator smallSim(rng, faiIndex, options);
         for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
             _simulateContig(svSim, smallSim, options, rId);
@@ -1627,10 +1740,12 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     // Define usage line and long description.
     addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-ov\\fP \\fIOUT.vcf\\fP [\\fB-of\\fP \\fIOUT.fa\\fP]");
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-of\\fP \\fIOUT.fa\\fP");
+    // addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-of\\fP \\fIOUT.fa\\fP");
     addDescription(parser,
-                   "Either simulate variation and write out the result to VCF and FASTA files "
-                   "or apply the variations from a VCF file and write the results to a FASTA file.");
+                   "Either simulate variation and write out the result to VCF and optionally FASTA files.");
+    // addDescription(parser,
+    //                "Either simulate variation and write out the result to VCF and FASTA files "
+    //                "or apply the variations from a VCF file and write the results to a FASTA file.");
 
     // ----------------------------------------------------------------------
     // General Options
@@ -1653,9 +1768,9 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     addSection(parser, "Input / Output");
     
-    addOption(parser, seqan::ArgParseOption("iv", "in-vcf", "VCF file to load variations from.",
-                                            seqan::ArgParseOption::INPUTFILE, "VCF"));
-    setValidValues(parser, "in-vcf", "vcf");
+    // addOption(parser, seqan::ArgParseOption("iv", "in-vcf", "VCF file to load variations from.",
+    //                                         seqan::ArgParseOption::INPUTFILE, "VCF"));
+    // setValidValues(parser, "in-vcf", "vcf");
 
     addOption(parser, seqan::ArgParseOption("if", "in-fasta", "FASTA file with reference.",
                                             seqan::ArgParseOption::INPUTFILE, "FASTA"));
@@ -1665,7 +1780,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     addOption(parser, seqan::ArgParseOption("it", "in-variant-tsv",
                                             "TSV file with variants to simulate.  See Section on the Variant TSV File below.",
                                             seqan::ArgParseOption::INPUTFILE, "VCF"));
-    setValidValues(parser, "in-vcf", "vcf");
+    setValidValues(parser, "in-variant-tsv", "tsv txt");
 
     addOption(parser, seqan::ArgParseOption("ov", "out-vcf", "VCF file to write simulated variations to.",
                                             seqan::ArgParseOption::INPUTFILE, "VCF"));
@@ -1820,7 +1935,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     getOptionValue(options.seed, parser, "seed");
 
-    getOptionValue(options.vcfInFile, parser, "in-vcf");
+    // getOptionValue(options.vcfInFile, parser, "in-vcf");
     getOptionValue(options.fastaInFile, parser, "in-fasta");
     getOptionValue(options.vcfOutFile, parser, "out-vcf");
     getOptionValue(options.fastaOutFile, parser, "out-fasta");
