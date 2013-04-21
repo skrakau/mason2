@@ -52,6 +52,8 @@
 #include <seqan/vcf.h>
 #include <seqan/sequence_journaled.h>
 
+#include "variation_size_tsv.h"
+
 // ==========================================================================
 // Forwards
 // ==========================================================================
@@ -714,6 +716,9 @@ public:
     // FAI Index for loading sequence contig-wise.
     seqan::FaiIndex const & faiIndex;
 
+    // Variation size record.
+    seqan::String<VariationSizeRecord> variationSizeRecords;
+
     MasonVariatorApp(TRng & rng, seqan::FaiIndex const & faiIndex,
                      MasonVariatorOptions const & options) :
             rng(rng), options(options), faiIndex(faiIndex)
@@ -750,7 +755,6 @@ public:
         // Copy over sample names.
         appendName(*vcfStream._context.sampleNames, "simulated", vcfStream._context.sampleNamesCache);
 
-
         // Open output FASTA file if necessary.
         if (!empty(options.fastaOutFile))
         {
@@ -763,9 +767,13 @@ public:
             }
         }
 
+        // Read in variant size TSV if path is given.
+        if (_readVariationSizes() != 0)
+            return 1;
+
         // Actually perform the variant simulation.
         if (options.verbosity >= 1)
-            std::cerr << "Simulation...\n";
+            std::cerr << "\nSimulation...\n";
         StructuralVariantSimulator svSim(rng, faiIndex, options);
         SmallVariantSimulator smallSim(rng, faiIndex, options);
         for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
@@ -773,6 +781,46 @@ public:
         if (options.verbosity >= 1)
             std::cerr << "OK.\n\n";
 
+        return 0;
+    }
+
+    // Read variation size TSV file if any is given.
+    int _readVariationSizes()
+    {
+        if (empty(options.inputSVSizeFile))
+            return 0;  // Nothing to do
+
+        if (options.verbosity >= 1)
+            std::cerr << "Variation Sizes " << options.inputSVSizeFile << " ...";
+
+        std::fstream inF(toCString(options.inputSVSizeFile), std::ios::in | std::ios::binary);
+        if (!inF.good())
+        {
+            std::cerr << "ERROR: Could not open " << options.inputSVSizeFile << "\n";
+            return 1;
+        }
+
+        seqan::RecordReader<std::fstream, seqan::SinglePass<> > reader(inF);
+        VariationSizeRecord record;
+        while (!atEnd(reader))
+        {
+            if (value(reader) == '#')
+            {
+                skipLine(reader);
+                continue;  // Skip comment.
+            }
+
+            if (readRecord(record, reader, VariationSizeTsv()) != 0)
+            {
+                std::cerr << "ERROR: Problem reading from " << options.inputSVSizeFile << "\n";
+                return 1;
+            }
+            appendValue(variationSizeRecords, record);
+        }
+
+        if (options.verbosity >= 1)
+            std::cerr << " OK\n";
+        
         return 0;
     }
 
@@ -1741,15 +1789,16 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     addTextSection(parser, "Variation TSV File");
     addText(parser,
-            "Instead of simulating the variants from per-base rates, the user can specify a TSV (tab separated values) "
+            "Instead of simulating the SVs from per-base rates, the user can specify a TSV (tab separated values) "
             "file to load the variations from with \\fB--in-variant-tsv\\fP/\\fB-it\\fP.  The first two columns of "
-            "this TSV file are interpreted as the type of the variation and the size");
-    addText(parser, "The following types are defined");
-    addListItem(parser, "SNP", "A SNP, the second column is ignored");
+            "this TSV file are interpreted as the type of the variation and the size.");
+    addText(parser,
+            "Indels smaller than 50 bp are considered small indels whereas larger indels are considered structural "
+            "variants in the VCF file.");
     addListItem(parser, "INS", "An insertion.");
     addListItem(parser, "DEL", "A deletion.");
     addListItem(parser, "INV", "An inversion.");
-    addListItem(parser, "TRA", "An inter-chromosomal translocation.");
+    // addListItem(parser, "TRA", "An inter-chromosomal translocation.");  // TODO(holtgrew): Add support.
     addListItem(parser, "CTR", "An intra-chromosomal translocation.");
     addListItem(parser, "DUP", "A duplication");
 

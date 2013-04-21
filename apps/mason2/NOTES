@@ -1,4 +1,4 @@
-Coordinate System Translation
+COORDINATE SYSTEM TRANSLATION
 -----------------------------
 
 Two-step projectin; (1) original system, (2) small variants, (3) large
@@ -6,3 +6,35 @@ variants.
 
 Small variants and large variants are independent of each other and cannot
 overlap.  Even more at least one base difference.
+
+Original to Large Variants
+--------------------------
+
+* (1) apply small variants (2) apply structural variants if any.
+
+* use journal entries for translation of borders of structural variants
+
+* data structures:
+
+  - journal entries for (1->2)
+  - interval tree for (2->3) with attached SV
+
+Large Variants to Original
+--------------------------
+
+* (1) translate back from large variants to small variants CS, (2) translate
+  into original CS.
+
+* data strucutres:
+
+  - interval tree for (3->2)
+  - journal entries for (2->1)
+
+QUERIES
+-------
+
+* given a read interval from the simulated donor genome, find all breakpoints
+  (+start/end points) in the read
+
+* given a read interval from the simulated donor genome, find all the
+  locations of the breakpoints (+start/end points) in the original genome.

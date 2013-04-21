@@ -42,7 +42,8 @@ add_executable (mason_sequencing
                 simulate_base.cpp
                 simulate_sanger.cpp
                 simulate_454.cpp
-                simulate_illumina.cpp)
+                simulate_illumina.cpp
+                variation_size_tsv.h)
 add_executable (mason_variator mason_variator.cpp)
 
 # Add dependencies found by find_package (SeqAn).
