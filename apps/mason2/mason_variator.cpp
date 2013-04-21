@@ -44,11 +44,12 @@
 // TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
 
-#include  <seqan/arg_parse.h>
-#include  <seqan/random.h>
-#include  <seqan/sequence.h>
-#include  <seqan/seq_io.h>
-#include  <seqan/vcf.h>
+#include <seqan/arg_parse.h>
+#include <seqan/random.h>
+#include <seqan/sequence.h>
+#include <seqan/seq_io.h>
+#include <seqan/vcf.h>
+#include <seqan/sequence_journaled.h>
 
 // ==========================================================================
 // Forwards
@@ -59,6 +60,7 @@
 // ==========================================================================
 
 typedef seqan::Rng<> TRng;
+typedef seqan::JournalEntries<seqan::JournalEntry<unsigned, int>, seqan::SortedArray> TJournalEntries;
 
 // --------------------------------------------------------------------------
 // Class MasonVariatorOptions
@@ -436,7 +438,8 @@ public:
     // The variator options.
     MasonVariatorOptions options;
 
-    StructuralVariantSimulator(TRng & rng, seqan::FaiIndex const & faiIndex, MasonVariatorOptions const & options) :
+    StructuralVariantSimulator(TRng & rng, seqan::FaiIndex const & faiIndex,
+                               MasonVariatorOptions const & options) :
             rng(rng), faiIndex(faiIndex), options(options)
     {}
 
@@ -625,7 +628,8 @@ public:
             bool isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
             double isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
             int const MAX_TRIES = 1000;
-            for (int tryNo = 0; isSnp && isIndel && (tryNo < MAX_TRIES); ++tryNo)
+            int tryNo = 0;
+            for (; isSnp && isIndel && (tryNo < MAX_TRIES); ++tryNo)
             {
                 isSnp = (pickRandomNumber(rng, pdf) < options.snpRate);
                 isIndel = (pickRandomNumber(rng, pdf) < options.smallIndelRate);
@@ -823,8 +827,37 @@ public:
         snprintf(buffer, 19, "%d", hId);
         append(id, buffer);
 
-        // Build contig.
-        seqan::CharString seq;
+        // Apply small variants.  We get a sequence with the small variants and a journal of the difference to contig.
+        seqan::Dna5String seqSmallVariants;
+        TJournalEntries journal;
+        if (_materializeSmallVariants(seqSmallVariants, journal, contig, variants, rId, hId) != 0)
+            return 1;
+
+        // Apply structural variants.
+        seqan::Dna5String seqLargeVariants;
+        if (_materializeLargeVariants(seqLargeVariants, journal, seqSmallVariants, variants, rId, hId) != 0)
+            return 1;
+
+        return writeRecord(outSeqStream, id, seqLargeVariants);
+    }
+
+    // Apply large structural variants from variants into seq.  The input is given as the sequence including small
+    // variants and a journal for translating coordinates in contig into coordinates of the underlying sequence which is
+    // used as the coordinate system in variants.
+    int _materializeLargeVariants(seqan::Dna5String & seq, TJournalEntries const & journal,
+                                  seqan::Dna5String const & contig,
+                                  Variants const & variants, int rId, int hId)
+    {
+        
+        
+        return 0;
+    }
+
+    // Apply small indels and SNPs from variants into seq using contig.
+    int _materializeSmallVariants(seqan::Dna5String & seq, TJournalEntries & journal,
+                                  seqan::Dna5String const & contig,
+                                  Variants const & variants, int rId, int hId)
+    {
         // Fors this, we have to iterate in parallel over SNP and small indel records.
         //
         // Current index in snp/small indel array.
@@ -844,6 +877,7 @@ public:
         if (options.verbosity >= 3)
             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
 
+        // TODO(holtgrew): Extract contig building into their own functions.
         if (options.verbosity >= 2)
             std::cerr << "building output\n";
         while (snpRecord.rId != seqan::maxValue<int>() || smallIndelRecord.rId != seqan::maxValue<int>())
@@ -886,6 +920,8 @@ public:
                             std::cerr << "append(seq, \"" << smallIndelRecord.seq << "\") " << __LINE__ << "\n";
                         append(seq, smallIndelRecord.seq);
                         lastPos = smallIndelRecord.pos;
+                        recordInsertion(journal, hostToVirtualPosition(journal, smallIndelRecord.pos),
+                                        0, smallIndelRecord.size);
                         if (options.verbosity >= 3)
                             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
                     }
@@ -911,7 +947,7 @@ public:
             std::cerr << "append(seq, infix(contig, infix(contig, " << lastPos << ", " << length(contig) << ")\n";
         append(seq, infix(contig, lastPos, length(contig)));
 
-        return writeRecord(outSeqStream, id, seq);
+        return 0;
     }
 
     // Write out variants for the given contig to the VCF file.

@@ -1,0 +1,8 @@
+Coordinate System Translation
+-----------------------------
+
+Two-step projectin; (1) original system, (2) small variants, (3) large
+variants.
+
+Small variants and large variants are independent of each other and cannot
+overlap.  Even more at least one base difference.
