@@ -43,6 +43,7 @@
 // TODO(holtgrew): Add support for parsing VCF.
 // TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
+// TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event?
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
@@ -848,7 +849,95 @@ public:
                                   seqan::Dna5String const & contig,
                                   Variants const & variants, int rId, int hId)
     {
+        if (options.verbosity >= 2)
+            std::cerr << "\nMATERIALIZING LARGE VARIANTS FOR HAPLOTYPE " << hId << "\n\n";
         
+        // Track last position from contig appended to seq so far.
+        int lastPos = 0;
+        if (options.verbosity >= 3)
+            std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
+
+        for (unsigned i = 0; i < length(variants.svRecords); ++i)
+        {
+            if (variants.svRecords[i].haplotype != hId)  // Ignore all but the current contig.
+                continue;
+            // We obtain a copy of the current SV record since we translate its positions below.
+            StructuralVariantRecord svRecord = variants.svRecords[i];
+
+            // Translate positions and lengths of SV record.
+            if (options.verbosity >= 2)
+                std::cerr << "  Translating SvRecord\n  " << svRecord << '\n';
+            svRecord.pos = hostToVirtualPosition(journal, svRecord.pos);
+            svRecord.size = hostToVirtualPosition(journal, svRecord.pos + svRecord.size) -
+                    hostToVirtualPosition(journal, svRecord.pos);
+            if (svRecord.targetPos != -1)
+                svRecord.targetPos = hostToVirtualPosition(journal, svRecord.targetPos);
+            if (options.verbosity >= 2)
+                std::cerr << "  => " << svRecord << '\n';
+
+            // Copy from contig to seq with SVs.
+            append(seq, infix(contig, lastPos, svRecord.pos));  // interim chars
+            if (options.verbosity >= 3)
+                std::cerr << "append(seq, infix(contig, " << lastPos << ", " << svRecord.pos << ") " << __LINE__ << " (interim)\n";
+            switch (svRecord.kind)
+            {
+                case StructuralVariantRecord::INDEL:
+                    {
+                        if (svRecord.size > 0)  // insertion
+                        {
+                            SEQAN_ASSERT_EQ((int)length(svRecord.seq), svRecord.size);
+                            append(seq, svRecord.seq);
+                            if (options.verbosity >= 3)
+                                std::cerr << "append(seq, svRecord.seq (length == " << length(svRecord.seq) << ") " << __LINE__ << " (insertion)\n";
+                            lastPos = svRecord.pos;
+                        }
+                        else  // deletion
+                        {
+                            lastPos = svRecord.pos - svRecord.size;
+                        }
+                    }
+                    break;
+                case StructuralVariantRecord::INVERSION:
+                    {
+                        unsigned oldLen = length(seq);
+                        append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        if (options.verbosity >= 3)
+                            std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (inversion)\n";
+                        reverseComplement(infix(seq, oldLen, length(seq)));
+                        lastPos += svRecord.size;
+                    }
+                    break;
+                case StructuralVariantRecord::TRANSLOCATION:
+                    {
+                        SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
+                        append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        if (options.verbosity >= 3)
+                            std::cerr << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << " (translocation)\n"
+                                      << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
+                        lastPos = svRecord.targetPos;
+                    }
+                    break;
+                case StructuralVariantRecord::DUPLICATION:
+                    {
+                        append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
+                        append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (duplication)\n"
+                                  << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
+                                  << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
+                        lastPos = svRecord.targetPos;
+                    }
+                    break;
+                default:
+                    return 1;
+            }
+        }
+        if (options.verbosity >= 3)
+            std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ") "
+                      << __LINE__ << " (last interim)\n";
+        append(seq, infix(contig, lastPos, length(contig)));
         
         return 0;
     }
@@ -858,6 +947,8 @@ public:
                                   seqan::Dna5String const & contig,
                                   Variants const & variants, int rId, int hId)
     {
+        reinit(journal, length(contig));
+
         // Fors this, we have to iterate in parallel over SNP and small indel records.
         //
         // Current index in snp/small indel array.
@@ -873,6 +964,7 @@ public:
         smallIndelRecord.rId = seqan::maxValue<int>();
         if (smallIndelIdx < length(variants.smallIndels))
             smallIndelRecord = variants.smallIndels[smallIndelIdx++];
+        // Track last position from contig appended to seq so far.
         int lastPos = 0;
         if (options.verbosity >= 3)
             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
@@ -944,7 +1036,7 @@ public:
         }
         // Insert interim characters.
         if (options.verbosity >= 3)
-            std::cerr << "append(seq, infix(contig, infix(contig, " << lastPos << ", " << length(contig) << ")\n";
+            std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ")\n";
         append(seq, infix(contig, lastPos, length(contig)));
 
         return 0;
