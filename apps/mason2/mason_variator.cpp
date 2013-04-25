@@ -43,6 +43,7 @@
 // TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
 // TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event? Per-base is OK, I guess, only has to be documented properly.
+// TODO(holtgrew): SNPs -> no original?! or "0" value
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
@@ -646,6 +647,8 @@ public:
 
     bool simulateInversion(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
+        if (pos + size >= (int)sequenceLength(faiIndex, rId))
+            return false;
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         appendValue(variants.svRecords, StructuralVariantRecord(
                 StructuralVariantRecord::INVERSION, hId, rId, pos, size));
@@ -657,6 +660,8 @@ public:
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         int tPos = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(pos + size + options.minSVSize,
                                                                           pos + size + options.maxSVSize));
+        if (tPos >= (int)sequenceLength(faiIndex, rId))
+            return false;
         appendValue(variants.svRecords, StructuralVariantRecord(
                 StructuralVariantRecord::TRANSLOCATION, hId, rId, pos, size, rId, tPos));
         return true;
@@ -1065,7 +1070,7 @@ public:
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (inversion)\n";
                         reverseComplement(infix(seq, oldLen, length(seq)));
-                        lastPos += svRecord.size;
+                        lastPos = svRecord.pos + svRecord.size;
                     }
                     break;
                 case StructuralVariantRecord::TRANSLOCATION:
@@ -1085,9 +1090,10 @@ public:
                         SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
                         append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
                         append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
-                        std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (duplication)\n"
-                                  << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
-                                  << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
+                        if (options.verbosity >= 3)
+                            std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (duplication)\n"
+                                      << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
+                                      << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
                         lastPos = svRecord.targetPos;
                     }
                     break;
