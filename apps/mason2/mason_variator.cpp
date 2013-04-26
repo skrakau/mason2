@@ -879,7 +879,7 @@ public:
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
                 "INFO", "<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">"));
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
-                "INFO", "<ID=TARGETPOST,Number=1,Type=String,Description=\"Target position for duplications.\">"));
+                "INFO", "<ID=TARGETPOS,Number=1,Type=String,Description=\"Target position for duplications.\">"));
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
                 "ALT", "<ID=INV,Description=\"Inversion\">"));
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
@@ -1084,6 +1084,7 @@ public:
 
             // Copy from contig to seq with SVs.
             append(seq, infix(contig, lastPos, svRecord.pos));  // interim chars
+            currentPos = length(seq);
             if (options.verbosity >= 3)
                 std::cerr << "append(seq, infix(contig, " << lastPos << ", " << svRecord.pos << ") " << __LINE__ << " (interim)\n";
             switch (svRecord.kind)
@@ -1100,8 +1101,8 @@ public:
                             lastPos = svRecord.pos;
 
                             if (!empty(options.outputBreakpointFile))  // write out breakpoints
-                                breakpointsOut << ref << "\t" << currentPos << "\n"
-                                               << ref << "\t" << length(seq) << "\n";
+                                breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
+                                               << ref << "\t" << (length(seq) + 1) << "\n";
                             currentPos = length(seq);
                         }
                         else  // deletion
@@ -1123,8 +1124,8 @@ public:
                         lastPos = svRecord.pos + svRecord.size;
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
-                            breakpointsOut << ref << "\t" << currentPos << "\n"
-                                           << ref << "\t" << length(seq) << "\n";
+                            breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
+                                           << ref << "\t" << (length(seq) + 1) << "\n";
                         currentPos = length(seq);
                     }
                     break;
@@ -1139,9 +1140,9 @@ public:
                         lastPos = svRecord.targetPos;
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
-                            breakpointsOut << ref << "\t" << currentPos << "\n"
-                                           << ref << "\t" << (currentPos + svRecord.targetPos - svRecord.pos - svRecord.size) << "\n"
-                                           << ref << "\t" << length(seq) << "\n";
+                            breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
+                                           << ref << "\t" << (currentPos + svRecord.targetPos - svRecord.pos - svRecord.size + 1) << "\n"
+                                           << ref << "\t" << (length(seq) + 1) << "\n";
                         currentPos = length(seq);
                     }
                     break;
@@ -1158,11 +1159,11 @@ public:
                         lastPos = svRecord.targetPos;
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
-                            breakpointsOut << ref << "\t" << currentPos << "\n"
-                                           << ref << "\t" << (currentPos + svRecord.pos + svRecord.size - svRecord.pos) << "\n"
+                            breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
+                                           << ref << "\t" << (currentPos + svRecord.pos + svRecord.size - svRecord.pos + 1) << "\n"
                                            << ref << "\t" << (currentPos + svRecord.pos + svRecord.size - svRecord.pos +
-                                                              svRecord.targetPos - (svRecord.pos + svRecord.size)) << "\n"
-                                           << ref << "\t" << length(seq) << "\n";
+                                                              svRecord.targetPos - (svRecord.pos + svRecord.size) + 1) << "\n"
+                                           << ref << "\t" << (length(seq) + 1) << "\n";
                         currentPos = length(seq);
                     }
                     break;
@@ -1810,7 +1811,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     seqan::ArgumentParser parser("mason_variator");
     // Set short description, version, and date.
     setShortDescription(parser, "Variation Simulation");
-    setVersion(parser, "2.1");
+    setVersion(parser, "2.0alpha1");
     setDate(parser, "March 2013");
     setCategory(parser, "Simulators");
 
@@ -1889,7 +1890,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
                                             "The separator between the chromosome and the haplotype name "
                                             "in the output FASTA file.",
                                             seqan::ArgParseOption::STRING, "SEP"));
-    setDefaultValue(parser, "haplotype-sep", ":");
+    setDefaultValue(parser, "haplotype-sep", "/");
 
     // ----------------------------------------------------------------------
     // Variation Simulation Options
