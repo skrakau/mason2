@@ -1,0 +1,11 @@
+                   Mason 2 -- Synthetic Sequence Simulator
+
+------------------------------------------------------------------------------
+Installation
+------------------------------------------------------------------------------
+
+cd seqan-trunk/sandbox
+git clone git://github.com/holtgrewe/mason2.git mason2
+cd ../../seqan-trunk-build/debug
+cmake .
+cd sandbox/mason2 && make -j 4
