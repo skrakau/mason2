@@ -72,7 +72,7 @@ void splitString(StringSet<CharString> & result,
                  char splitter = '\xff',
                  char quoteChar = '"')
 {
-    typedef Iterator<CharString>::Type TIter;
+    typedef Iterator<CharString const>::Type TIter;
 
     CharString buffer;
 

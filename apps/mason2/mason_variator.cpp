@@ -43,7 +43,6 @@
 // TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
 // TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event? Per-base is OK, I guess, only has to be documented properly.
-// TODO(holtgrew): SNPs -> no original?! or "0" value
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
@@ -93,6 +92,8 @@ struct MasonVariatorOptions
     // Path to a TSV file where the first two columns giving the type of the SV to simulate and the size of the SV.
     // This overrides the simulation of SV from the sv*Rate parameters.
     seqan::CharString inputSVSizeFile;
+    // Path to TSV file to write the resulting breakpoints in variant genomes to.
+    seqan::CharString outputBreakpointFile;
 
     // ----------------------------------------------------------------------
     // Haplotype / Allele Configuration
@@ -144,6 +145,7 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "SV SIZE TSV IN       \t" << options.inputSVSizeFile << "\n"
         << "VCF OUT              \t" << options.vcfOutFile << "\n"
         << "FASTA OUT            \t" << options.fastaOutFile << "\n"
+        << "BREAKPOINT TSV OUT   \t" << options.outputBreakpointFile << "\n"
         << "\n"
         << "NUM HAPLOTYPES       \t" << options.numHaplotypes << "\n"
         << "HAPLOTYPE SEP        \t\"" << options.haplotypeSep << "\"\n"
@@ -454,7 +456,7 @@ public:
     StructuralVariantSimulator(TRng & rng, seqan::FaiIndex const & faiIndex,
                                seqan::String<VariationSizeRecord> const & variationSizeRecords,
                                MasonVariatorOptions const & options) :
-            rng(rng), faiIndex(faiIndex), variationSizeRecords(variationSizeRecords), options(options)
+            rng(rng), faiIndex(faiIndex), options(options), variationSizeRecords(variationSizeRecords)
     {
         _distributeVariations();
     }
@@ -634,7 +636,7 @@ public:
         seqan::CharString indelSeq;
         reserve(indelSeq, options.maxSVSize);
         bool deletion = (size < 0);
-        if (deletion && (pos + size) > (int)sequenceLength(faiIndex, rId))
+        if (deletion && (pos + size) > sequenceLength(faiIndex, rId))
             return false;  // not enough space at the end
         seqan::Pdf<seqan::Uniform<int> > pdf(0, 3);
         for (int i = 0; i < size; ++i)  // not executed in case of deleted sequence
@@ -647,7 +649,7 @@ public:
 
     bool simulateInversion(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
-        if (pos + size >= (int)sequenceLength(faiIndex, rId))
+        if (pos + size >= sequenceLength(faiIndex, rId))
             return false;
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         appendValue(variants.svRecords, StructuralVariantRecord(
@@ -724,7 +726,7 @@ public:
         {
             // Seek next possible SV record that could have pos close to its breakends.
             bool skip = false;  // marker in case we switch SV records
-            while (pos > svRecord.endPosition())
+            while ((int)pos > svRecord.endPosition())
             {
                 // Skip if near breakend.
                 skip = svRecord.nearBreakend(pos);
@@ -758,7 +760,7 @@ public:
                     isIndel = false;  // No indel at beginning, complex VCF case.
             }
             if (tryNo == MAX_TRIES)  // picked SNP and indel for MAX_TRIES time, pick none
-                isSnp = isIndel = false;
+                isSnp = (isIndel == false);
 
             // Simulate either SNP or indel.  In the case of a deletion, advance position such that there
             // is no variation in the deleted sequence.
@@ -806,7 +808,7 @@ public:
         int indelSize = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(options.minSmallIndelSize,
                                                                                options.maxSmallIndelSize));
         bool deletion = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1));
-        if (deletion && (pos + indelSize) > (int)sequenceLength(faiIndex, rId))
+        if (deletion && (pos + indelSize) > sequenceLength(faiIndex, rId))
             return false;  // not enough space at the end
         indelSize = deletion ? -indelSize : indelSize;
         seqan::Pdf<seqan::Uniform<int> > pdf(0, 3);
@@ -837,6 +839,9 @@ public:
     // Variation size record.
     seqan::String<VariationSizeRecord> variationSizeRecords;
 
+    // File to write breakpoints to.
+    std::fstream breakpointsOut;
+
     MasonVariatorApp(TRng & rng, seqan::FaiIndex const & faiIndex,
                      MasonVariatorOptions const & options) :
             rng(rng), options(options), faiIndex(faiIndex)
@@ -844,6 +849,18 @@ public:
 
     int run()
     {
+        // Open output breakpoints TSV file.
+        if (!empty(options.outputBreakpointFile))
+        {            
+            breakpointsOut.open(toCString(options.outputBreakpointFile), std::ios::binary | std::ios::out);
+            if (!breakpointsOut.good())
+            {
+                std::cerr << "ERROR: Could not open " << options.outputBreakpointFile << " for writing.\n";
+                return 1;
+            }
+            breakpointsOut << "#ref\tpos\n";
+        }
+
         // Open VCF stream to write to.
         open(vcfStream, toCString(options.vcfOutFile), seqan::VcfStream::WRITE);
         if (!isGood(vcfStream))
@@ -855,6 +872,24 @@ public:
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord("source", "mason_variator"));
         appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord("reference", options.fastaInFile));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "INFO", "<ID=END,Number=1,Type=Integer,Description=\"End position of the variant described in this record\">"));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "INFO", "<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles\">"));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "INFO", "<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">"));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "INFO", "<ID=TARGETPOST,Number=1,Type=String,Description=\"Target position for duplications.\">"));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "ALT", "<ID=INV,Description=\"Inversion\">"));
+        appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+                "ALT", "<ID=DUP,Description=\"Duplication\">"));
+        // We don't need DEL and INS here since we report exact one with the sequence.
+        // appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+        //         "ALT", "<ID=DEL,Description=\"Deletion\">"));
+        // appendValue(vcfStream.header.headerRecords, seqan::VcfHeaderRecord(
+        //         "ALT", "<ID=INS,Description=\"Insertion of novel sequence\">"));
+
         // Copy over sequence names.
         for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
         {
@@ -1002,7 +1037,7 @@ public:
 
         // Apply structural variants.
         seqan::Dna5String seqLargeVariants;
-        if (_materializeLargeVariants(seqLargeVariants, journal, seqSmallVariants, variants, rId, hId) != 0)
+        if (_materializeLargeVariants(seqLargeVariants, journal, seqSmallVariants, variants, rId, hId, id) != 0)
             return 1;
 
         return writeRecord(outSeqStream, id, seqLargeVariants);
@@ -1013,7 +1048,10 @@ public:
     // used as the coordinate system in variants.
     int _materializeLargeVariants(seqan::Dna5String & seq, TJournalEntries const & journal,
                                   seqan::Dna5String const & contig,
-                                  Variants const & variants, int rId, int hId)
+                                  Variants const & variants,
+                                  int /*rId*/,
+                                  int hId,
+                                  seqan::CharString const & ref)
     {
         if (options.verbosity >= 2)
             std::cerr << "\nMATERIALIZING LARGE VARIANTS FOR HAPLOTYPE " << hId << "\n\n";
@@ -1022,6 +1060,9 @@ public:
         int lastPos = 0;
         if (options.verbosity >= 3)
             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
+
+        // Number of bytes written out so far/current position in variant.
+        int currentPos = 0;
 
         for (unsigned i = 0; i < length(variants.svRecords); ++i)
         {
@@ -1052,14 +1093,23 @@ public:
                         if (svRecord.size > 0)  // insertion
                         {
                             SEQAN_ASSERT_EQ((int)length(svRecord.seq), svRecord.size);
+                                    
                             append(seq, svRecord.seq);
                             if (options.verbosity >= 3)
                                 std::cerr << "append(seq, svRecord.seq (length == " << length(svRecord.seq) << ") " << __LINE__ << " (insertion)\n";
                             lastPos = svRecord.pos;
+
+                            if (!empty(options.outputBreakpointFile))  // write out breakpoints
+                                breakpointsOut << ref << "\t" << currentPos << "\n"
+                                               << ref << "\t" << length(seq) << "\n";
+                            currentPos = length(seq);
                         }
                         else  // deletion
                         {
                             lastPos = svRecord.pos - svRecord.size;
+
+                            if (!empty(options.outputBreakpointFile))  // write out breakpoint
+                                breakpointsOut << ref << "\t" << currentPos << "\n";
                         }
                     }
                     break;
@@ -1071,6 +1121,11 @@ public:
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (inversion)\n";
                         reverseComplement(infix(seq, oldLen, length(seq)));
                         lastPos = svRecord.pos + svRecord.size;
+
+                        if (!empty(options.outputBreakpointFile))  // write out breakpoint
+                            breakpointsOut << ref << "\t" << currentPos << "\n"
+                                           << ref << "\t" << length(seq) << "\n";
+                        currentPos = length(seq);
                     }
                     break;
                 case StructuralVariantRecord::TRANSLOCATION:
@@ -1082,6 +1137,12 @@ public:
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << " (translocation)\n"
                                       << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
                         lastPos = svRecord.targetPos;
+
+                        if (!empty(options.outputBreakpointFile))  // write out breakpoint
+                            breakpointsOut << ref << "\t" << currentPos << "\n"
+                                           << ref << "\t" << (currentPos + svRecord.targetPos - svRecord.pos - svRecord.size) << "\n"
+                                           << ref << "\t" << length(seq) << "\n";
+                        currentPos = length(seq);
                     }
                     break;
                 case StructuralVariantRecord::DUPLICATION:
@@ -1095,6 +1156,14 @@ public:
                                       << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
                                       << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
                         lastPos = svRecord.targetPos;
+
+                        if (!empty(options.outputBreakpointFile))  // write out breakpoint
+                            breakpointsOut << ref << "\t" << currentPos << "\n"
+                                           << ref << "\t" << (currentPos + svRecord.pos + svRecord.size - svRecord.pos) << "\n"
+                                           << ref << "\t" << (currentPos + svRecord.pos + svRecord.size - svRecord.pos +
+                                                              svRecord.targetPos - (svRecord.pos + svRecord.size)) << "\n"
+                                           << ref << "\t" << length(seq) << "\n";
+                        currentPos = length(seq);
                     }
                     break;
                 default:
@@ -1112,7 +1181,7 @@ public:
     // Apply small indels and SNPs from variants into seq using contig.
     int _materializeSmallVariants(seqan::Dna5String & seq, TJournalEntries & journal,
                                   seqan::Dna5String const & contig,
-                                  Variants const & variants, int rId, int hId)
+                                  Variants const & variants, int /*rId*/, int hId)
     {
         reinit(journal, length(contig));
 
@@ -1210,7 +1279,7 @@ public:
     }
 
     // Write out variants for the given contig to the VCF file.
-    int _writeVcf(seqan::Dna5String const & contig, Variants const & variants, int rId)
+    int _writeVcf(seqan::Dna5String const & contig, Variants const & variants, int /*rId*/)
     {
         // Current index in snp/small indel and SV array.
         unsigned snpsIdx = 0;
@@ -1238,7 +1307,7 @@ public:
             if (snpRecord.rId != seqan::maxValue<int>() && smallIndelRecord.rId != seqan::maxValue<int>())
                 SEQAN_ASSERT(snpRecord.getPos() != smallIndelRecord.getPos());  // are generated indendently
             if (snpRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
-                SEQAN_ASSERT(svRecord.getPos() != svRecord.getPos());  // are generated indendently
+                SEQAN_ASSERT(snpRecord.getPos() != svRecord.getPos());  // are generated indendently
             if (smallIndelRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
                 SEQAN_ASSERT(smallIndelRecord.getPos() != svRecord.getPos());  // are generated indendently
             SEQAN_ASSERT_NEQ(snpRecord.pos, 0);   // Not simulated, VCF complexer.
@@ -1693,7 +1762,8 @@ public:
         // TODO(holtgrew): Generate an id?
         vcfRecord.filter = "PASS";
         std::stringstream ss;
-        ss << "SVTYPE=DUP;SVLEN=" << svRecord.size << ";END=" << svRecord.pos + svRecord.size;
+        ss << "SVTYPE=DUP;SVLEN=" << svRecord.size << ";END=" << svRecord.pos + svRecord.size
+           << ";TARGETPOS=" << vcfStream.header.sequenceNames[svRecord.targetRId] << ":" << svRecord.targetPos;
         vcfRecord.info = ss.str();
         appendValue(vcfRecord.ref, contig[vcfRecord.pos]);
         vcfRecord.alt = "<DUP>";
@@ -1795,6 +1865,10 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     addOption(parser, seqan::ArgParseOption("of", "out-fasta", "FASTA file to write simulated haplotypes to.",
                                             seqan::ArgParseOption::INPUTFILE, "FASTA"));
     setValidValues(parser, "out-fasta", "fasta fa");
+
+    addOption(parser, seqan::ArgParseOption("", "out-breakpoints", "TSV file to write breakpoints in variants to.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "TSV"));
+    setValidValues(parser, "out-breakpoints", "tsv txt");
 
     addOption(parser, seqan::ArgParseOption("", "haplotype-name-sep", "Haplotype name separator in output FASTA.",
                                             seqan::ArgParseOption::STRING, "SEP"));
@@ -1945,6 +2019,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.fastaInFile, parser, "in-fasta");
     getOptionValue(options.vcfOutFile, parser, "out-vcf");
     getOptionValue(options.fastaOutFile, parser, "out-fasta");
+    getOptionValue(options.outputBreakpointFile, parser, "out-breakpoints");
     getOptionValue(options.inputSVSizeFile, parser, "in-variant-tsv");
 
     getOptionValue(options.numHaplotypes, parser, "num-haplotypes");
@@ -2023,15 +2098,6 @@ int main(int argc, char const ** argv)
 
     MasonVariatorApp app(rng, faiIndex, options);
     app.run();
-
-    std::cerr << "__WRITING OUTPUT______________________________________________________________\n"
-              << "\n";
-
-    if (!empty(options.vcfOutFile))
-        std::cerr << "Writing VCF to " << options.vcfOutFile << "\n";
-    
-    if (!empty(options.fastaOutFile))
-        std::cerr << "Writing FASTA to " << options.fastaOutFile << "\n";
 
     std::cerr << "\nDONE.\n";
     
