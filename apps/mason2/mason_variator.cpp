@@ -50,6 +50,7 @@
 #include <seqan/seq_io.h>
 #include <seqan/vcf_io.h>
 #include <seqan/sequence_journaled.h>
+#include <seqan/index.h>  // for Shape<>
 
 #include "variation_size_tsv.h"
 
@@ -197,6 +198,201 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "  CHH SIGMA          \t" << options.methSigmaCHH << "\n"
         << "\n";
 }
+
+// --------------------------------------------------------------------------
+// Class MethylationLevels
+// --------------------------------------------------------------------------
+
+// Stores methylation levels separately for forward and reverse strand.
+
+struct MethylationLevels
+{
+    // Forward and reverse levels, encoded as round(level / 0.125) + 33.
+    seqan::CharString forward, reverse;
+
+    void resize(unsigned len)
+    {
+        seqan::resize(forward, len, '!');
+        seqan::resize(reverse, len, '!');
+    }
+
+    // Translate character in forward/reverse to level (0..80).
+    inline char charToLevel(char c)
+    {
+        if (c < '<')  // '<' cannot be used as value
+            return c - 33;
+        else
+            return c - 34;
+    }
+
+    // Translate level (0..80) to character in forward/reverse.
+    inline char levelToChar(char c)
+    {
+        if (c < ('<' - 33))  // '<' cannot be used as value
+            return c + 33;
+        else
+            return c + 34;
+    }
+
+    // Returns methylation level for forward strand at position i.
+    inline float levelF(unsigned i)
+    {
+        return (charToLevel(forward[i])) / 0.0125;
+    }
+
+    // Sets methylation level for forward strand at position i.
+    inline void setLevelF(unsigned i, float level)
+    {
+        SEQAN_ASSERT_GEQ(level, 0.0);
+        SEQAN_ASSERT_LEQ(level, 1.0);
+        std::cerr << "forward[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
+        forward[i] = levelToChar(round(level / 0.0125));
+    }
+
+    // Returns methylation level for reverse strand at position i.
+    inline float levelR(unsigned i)
+    {
+        return (charToLevel(reverse[i])) / 0.0125;
+    }
+
+    // Sets methylation level for reverse strand at position i.
+    inline void setLevelR(unsigned i, float level)
+    {
+        SEQAN_ASSERT_GEQ(level, 0.0);
+        SEQAN_ASSERT_LEQ(level, 1.0);
+        std::cerr << "reverse[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
+        reverse[i] = levelToChar(round(level / 0.0125));
+    }
+};
+
+// --------------------------------------------------------------------------
+// Class MethylationLevelSimulator
+// --------------------------------------------------------------------------
+
+// Simulate methylation levels for a Dna sequence/contig on forward and reverse strand.
+
+class MethylationLevelSimulator
+{
+public:
+    // Options for the mu/sigma values.
+    MasonVariatorOptions const & options;
+
+    // Random number generator to use.
+    TRng & rng;
+
+    // Beta probability density functions for level generation.
+    seqan::Pdf<seqan::Beta> pdfC, pdfCG, pdfCHG, pdfCHH;
+
+    MethylationLevelSimulator(TRng & rng, MasonVariatorOptions const & options) :
+            rng(rng), options(options),
+            pdfC(options.methMuC, options.methSigmaC, seqan::MeanStdDev()),
+            pdfCG(options.methMuCG, options.methSigmaCG, seqan::MeanStdDev()),
+            pdfCHG(options.methMuCHG, options.methSigmaCHG, seqan::MeanStdDev()),
+            pdfCHH(options.methMuCHH, options.methSigmaCHH, seqan::MeanStdDev())
+    {}
+
+    // Simulate methylation levels for the sequence in contig.  The results are stored in levels.
+    void run(MethylationLevels & levels, seqan::Dna5String const & contig)
+    {
+        levels.resize(length(contig));
+
+        typedef seqan::Iterator<seqan::Dna5String const>::Type TContigIter;
+        TContigIter it = begin(contig, seqan::Standard());
+        TContigIter itEnd = end(contig, seqan::Standard()) - 3;
+
+        // We will go over the contig with hashes to search for patterns efficiently.
+        seqan::Shape<seqan::Dna5> shape2, shape3;
+        resize(shape2, 2);
+        resize(shape3, 3);
+        hash(shape2, it);
+        hash(shape3, it);
+        handleOneMer(levels, 0, ordValue(contig[0]));
+        handleTwoMer(levels, 0, value(shape3));
+        handleThreeMer(levels, 0, value(shape3));
+        ++it;
+        unsigned pos = 1;
+        for (; it != itEnd; ++it, ++pos)
+        {
+            hashNext(shape2, it);
+            hashNext(shape3, it);
+            handleOneMer(levels, pos, *it);
+            handleTwoMer(levels, pos, value(shape2));
+            handleThreeMer(levels, pos, value(shape3));
+        }
+        handleOneMer(levels, pos, ordValue(*it));
+        handleTwoMer(levels, pos++, value(shape2));
+        hashNext(shape2, it++);
+        handleOneMer(levels, pos, ordValue(*it));
+    }
+
+    // Handle 3mer, forward case.
+    void handleThreeMer(MethylationLevels & levels, unsigned pos, unsigned hashValue)
+    {
+        switch (hashValue)
+        {
+            case 27:  // CHG, symmetric
+            case 32:
+            case 42:
+                std::cerr << "CHG\n";
+                levels.setLevelF(pos, pickRandomNumber(rng, pdfCHG));
+                levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCHG));
+                break;
+            case 25:  // CHH
+            case 26:
+            case 28:
+            case 30:
+            case 31:
+            case 33:
+            case 40:
+            case 41:
+            case 43:
+                std::cerr << "CHH\n";
+                levels.setLevelF(pos, pickRandomNumber(rng, pdfCHH));
+                break;
+            case 2:  // rc(CHH)
+            case 12:
+            case 17:
+            case 52:
+            case 62:
+            case 67:
+            case 77:
+            case 87:
+            case 92:
+                std::cerr << "rc(CHH)\n";
+                levels.setLevelF(pos + 2, pickRandomNumber(rng, pdfCHH));
+                break;
+            default:
+                // nop
+                break;
+        }
+    }
+
+    // Handle 2mer, forward case.
+    void handleTwoMer(MethylationLevels & levels, unsigned pos, unsigned hashValue)
+    {
+        if (hashValue == 7)  // CpG forward (symmetric, also reverse)
+        {
+            std::cerr << "CpG\n";
+            levels.setLevelF(pos, pickRandomNumber(rng, pdfCG));
+            levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCG));
+        }
+    }
+
+    // Handle 1mer.
+    void handleOneMer(MethylationLevels & levels, unsigned pos, unsigned val)
+    {
+        if (val == 1)   // C forward
+        {
+            std::cerr << "C\n";
+            levels.setLevelF(pos, pickRandomNumber(rng, pdfC));
+        }
+        else if (val == 2)  // C reverse (G)
+        {
+            std::cerr << "G\n";
+            levels.setLevelR(pos, pickRandomNumber(rng, pdfC));
+        }
+    }
+};
 
 // --------------------------------------------------------------------------
 // Class SnpRecord
@@ -865,6 +1061,8 @@ public:
     seqan::VcfStream vcfStream;
     seqan::SequenceStream outSeqStream;
 
+    seqan::SequenceStream outMethLevelStream;
+
     // FAI Index for loading sequence contig-wise.
     seqan::FaiIndex const & faiIndex;
 
@@ -952,6 +1150,18 @@ public:
             }
         }
 
+        // Open methylation level output file if necessary.
+        if (options.simulateMethylationLevels && !empty(options.methFastaOutFile))
+        {
+            open(outMethLevelStream, toCString(options.methFastaOutFile), seqan::SequenceStream::WRITE,
+                 seqan::SequenceStream::FASTA);
+            if (!isGood(outMethLevelStream))
+            {
+                std::cerr << "ERROR: Could not open " << options.methFastaOutFile << " for writing!\n";
+                return 1;
+            }
+        }
+
         // Read in variant size TSV if path is given.
         if (_readVariationSizes() != 0)
             return 1;
@@ -962,9 +1172,48 @@ public:
         StructuralVariantSimulator svSim(rng, faiIndex, variationSizeRecords, options);
         SmallVariantSimulator smallSim(rng, faiIndex, options);
         for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
+        {
+            MethylationLevels methLevels;
+            _simulateMethLevels(methLevels, rId);
+            if (!empty(options.methFastaOutFile))
+                _writeMethylationLevels(methLevels, rId);
             _simulateContig(svSim, smallSim, options, rId);
+        }
         if (options.verbosity >= 1)
             std::cerr << "OK.\n\n";
+
+        return 0;
+    }
+
+    // Simulate methylation levels.
+    int _simulateMethLevels(MethylationLevels & levels, int rId)
+    {
+        MethylationLevelSimulator methSim(rng, options);
+        seqan::Dna5String contig;
+        if (!readSequence(contig, faiIndex, rId))
+            methSim.run(levels, contig);
+
+        return 0;
+    }
+
+    // Write out methylation levels to output file.
+    int _writeMethylationLevels(MethylationLevels const & levels, int rId)
+    {
+        seqan::CharString idTop = sequenceName(faiIndex, rId);
+        append(idTop, ":0:TOP");
+        if (writeRecord(outMethLevelStream, idTop, levels.forward) != 0)
+        {
+            std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
+            return 1;
+        }
+
+        seqan::CharString idBottom = sequenceName(faiIndex, rId);
+        append(idBottom, ":0:BOT");
+        if (writeRecord(outMethLevelStream, idBottom, levels.reverse) != 0)
+        {
+            std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
+            return 1;
+        }
 
         return 0;
     }
@@ -1893,6 +2142,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     addOption(parser, seqan::ArgParseOption("ov", "out-vcf", "VCF file to write simulated variations to.",
                                             seqan::ArgParseOption::INPUTFILE, "VCF"));
+    setRequired(parser, "out-vcf");
     setValidValues(parser, "out-vcf", "vcf");
 
     addOption(parser, seqan::ArgParseOption("of", "out-fasta", "FASTA file to write simulated haplotypes to.",
@@ -2105,9 +2355,11 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
             "for each base of the reference (0 for all non-cytosines) and stored in a string of levels.  This string "
             "is then modified as small and structural variations are simualted.");
     addText(parser,
-            "The simulated methylation levels can then be written out to a FASTA file.  This file will contain one entry "
-            "for the original and each haplotype.  The sequence will be ASCII characters 0, starting at '!' encoding the "
-            "level in 1.25% steps.  The character '>' is ignored and encodes no level.");
+            "The simulated methylation levels can then be written out to a FASTA file.  This file will contain two "
+            "entries for the original and each haplotype;  the levels for the forward and the reverse strand.  The "
+            "sequence will be ASCII characters 0, starting at '!' encoding the level in 1.25% steps.  The character "
+            "'>' is ignored and encodes no level.");
+    // TODO(holtgrew): Simulate different levels for each haplotype?
             
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
