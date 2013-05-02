@@ -245,7 +245,7 @@ struct MethylationLevels
     {
         SEQAN_ASSERT_GEQ(level, 0.0);
         SEQAN_ASSERT_LEQ(level, 1.0);
-        std::cerr << "forward[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
+        // std::cerr << "forward[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
         forward[i] = levelToChar(round(level / 0.0125));
     }
 
@@ -260,7 +260,7 @@ struct MethylationLevels
     {
         SEQAN_ASSERT_GEQ(level, 0.0);
         SEQAN_ASSERT_LEQ(level, 1.0);
-        std::cerr << "reverse[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
+        // std::cerr << "reverse[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
         reverse[i] = levelToChar(round(level / 0.0125));
     }
 };
@@ -333,7 +333,7 @@ public:
             case 27:  // CHG, symmetric
             case 32:
             case 42:
-                std::cerr << "CHG\n";
+                // std::cerr << "CHG\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHG));
                 levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCHG));
                 break;
@@ -346,7 +346,7 @@ public:
             case 40:
             case 41:
             case 43:
-                std::cerr << "CHH\n";
+                // std::cerr << "CHH\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHH));
                 break;
             case 2:  // rc(CHH)
@@ -358,7 +358,7 @@ public:
             case 77:
             case 87:
             case 92:
-                std::cerr << "rc(CHH)\n";
+                // std::cerr << "rc(CHH)\n";
                 levels.setLevelF(pos + 2, pickRandomNumber(rng, pdfCHH));
                 break;
             default:
@@ -372,7 +372,7 @@ public:
     {
         if (hashValue == 7)  // CpG forward (symmetric, also reverse)
         {
-            std::cerr << "CpG\n";
+            // std::cerr << "CpG\n";
             levels.setLevelF(pos, pickRandomNumber(rng, pdfCG));
             levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCG));
         }
@@ -383,12 +383,12 @@ public:
     {
         if (val == 1)   // C forward
         {
-            std::cerr << "C\n";
+            // std::cerr << "C\n";
             levels.setLevelF(pos, pickRandomNumber(rng, pdfC));
         }
         else if (val == 2)  // C reverse (G)
         {
-            std::cerr << "G\n";
+            // std::cerr << "G\n";
             levels.setLevelR(pos, pickRandomNumber(rng, pdfC));
         }
     }
@@ -1173,11 +1173,14 @@ public:
         SmallVariantSimulator smallSim(rng, faiIndex, options);
         for (int rId = 0; rId < (int)numSeqs(faiIndex); ++rId)  // ref seqs
         {
+            // Simulate methylation levels if configured to do so and write out for reference.  We always pass the
+            // levels down into _simulateContigs() but it can be empty and ignored if methylation levels are not of
+            // interest.
             MethylationLevels methLevels;
-            _simulateMethLevels(methLevels, rId);
-            if (!empty(options.methFastaOutFile))
-                _writeMethylationLevels(methLevels, rId);
-            _simulateContig(svSim, smallSim, options, rId);
+            if (options.simulateMethylationLevels)
+                _simulateMethLevels(methLevels, rId);
+            // Simulate contigs.
+            _simulateContig(svSim, smallSim, methLevels, options, rId);
         }
         if (options.verbosity >= 1)
             std::cerr << "OK.\n\n";
@@ -1197,19 +1200,23 @@ public:
     }
 
     // Write out methylation levels to output file.
-    int _writeMethylationLevels(MethylationLevels const & levels, int rId)
+    //
+    // levels -- levels
+    // hId -- haplotype id
+    // rId -- reference id
+    int _writeMethylationLevels(MethylationLevels const & levels, int hId, int rId)
     {
-        seqan::CharString idTop = sequenceName(faiIndex, rId);
-        append(idTop, ":0:TOP");
-        if (writeRecord(outMethLevelStream, idTop, levels.forward) != 0)
+        std::stringstream idTop;
+        idTop << sequenceName(faiIndex, rId) << options.haplotypeSep << hId << options.haplotypeSep << "TOP";
+        if (writeRecord(outMethLevelStream, idTop.str(), levels.forward) != 0)
         {
             std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
             return 1;
         }
 
-        seqan::CharString idBottom = sequenceName(faiIndex, rId);
-        append(idBottom, ":0:BOT");
-        if (writeRecord(outMethLevelStream, idBottom, levels.reverse) != 0)
+        std::stringstream idBottom;
+        idBottom << sequenceName(faiIndex, rId) << options.haplotypeSep << hId << options.haplotypeSep << "BOTTOM";
+        if (writeRecord(outMethLevelStream, idBottom.str(), levels.reverse) != 0)
         {
             std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
             return 1;
@@ -1259,8 +1266,17 @@ public:
     }
 
     // Perform simulation of one contig.
+    //
+    // If options.simulateMethylationLevels then methLevels will be used, otherwise it can be (and is) empty.
+    //
+    // svSim -- simulator for structural variants
+    // smallSim -- simulator for small variants
+    // methLevels -- methylation level information for reference
+    // options -- configuration
+    // rId -- ID of reference sequence that we are using now
     int _simulateContig(StructuralVariantSimulator & svSim,
                         SmallVariantSimulator & smallSim,
+                        MethylationLevels const & methLevels,
                         MasonVariatorOptions const & options,
                         int rId)
     {
@@ -1279,6 +1295,7 @@ public:
                       << "  structural variants: " << length(variants.svRecords) << "\n";
 
         // Load contig seq.
+        // TODO(holtgrew): Pass from outside, could reuse sequence from methylation levels.
         seqan::Dna5String contig;
         if (readSequence(contig, faiIndex, rId) != 0)
         {
@@ -1290,18 +1307,25 @@ public:
         if (_writeVcf(contig, variants, rId) != 0)
             return 1;
 
-        // Apply variants to contigs.
+        // Apply variants to contigs and write out.
         if (!empty(options.fastaOutFile))
+        {
+            // Write out methylation levels for reference.
+            if (options.simulateMethylationLevels && !empty(options.methFastaOutFile))
+                if (_writeMethylationLevels(methLevels, 0, rId) != 0)
+                    return 1;
+            // Apply variations to contigs and write out.
             for (int hId = 0; hId < options.numHaplotypes; ++hId)
             {
-                if (_writeContigs(contig, variants, rId, hId) != 0)
+                if (_writeContigs(contig, variants, methLevels, rId, hId) != 0)
                     return 1;
             }
+        }
 
         return 0;
     }
 
-    int _writeContigs(seqan::Dna5String const & contig, Variants const & variants, int rId, int hId)
+    int _writeContigs(seqan::Dna5String const & contig, Variants const & variants, MethylationLevels const & levels, int rId, int hId)
     {
         // Build sequence id.
         seqan::CharString id = sequenceName(faiIndex, rId);
@@ -1313,13 +1337,20 @@ public:
         // Apply small variants.  We get a sequence with the small variants and a journal of the difference to contig.
         seqan::Dna5String seqSmallVariants;
         TJournalEntries journal;
-        if (_materializeSmallVariants(seqSmallVariants, journal, contig, variants, rId, hId) != 0)
+        MethylationLevels levelsSmallVariants;
+        if (_materializeSmallVariants(seqSmallVariants, journal, levelsSmallVariants, contig, variants, levels, rId, hId) != 0)
             return 1;
 
         // Apply structural variants.
         seqan::Dna5String seqLargeVariants;
-        if (_materializeLargeVariants(seqLargeVariants, journal, seqSmallVariants, variants, rId, hId, id) != 0)
+        MethylationLevels levelsLargeVariants;
+        if (_materializeLargeVariants(seqLargeVariants, levelsLargeVariants, journal, seqSmallVariants, variants, levelsSmallVariants, rId, hId, id) != 0)
             return 1;
+
+        // Write out methylation levels if necessary.
+        if (options.simulateMethylationLevels && !empty(options.methFastaOutFile))
+            if (_writeMethylationLevels(levelsLargeVariants, hId, rId) != 0)
+                return 1;
 
         return writeRecord(outSeqStream, id, seqLargeVariants);
     }
@@ -1327,9 +1358,12 @@ public:
     // Apply large structural variants from variants into seq.  The input is given as the sequence including small
     // variants and a journal for translating coordinates in contig into coordinates of the underlying sequence which is
     // used as the coordinate system in variants.
-    int _materializeLargeVariants(seqan::Dna5String & seq, TJournalEntries const & journal,
+    int _materializeLargeVariants(seqan::Dna5String & seq,
+                                  MethylationLevels & levelsLargeVariants,
+                                  TJournalEntries const & journal,
                                   seqan::Dna5String const & contig,
                                   Variants const & variants,
+                                  MethylationLevels const & levels,
                                   int /*rId*/,
                                   int hId,
                                   seqan::CharString const & ref)
@@ -1461,9 +1495,14 @@ public:
     }
 
     // Apply small indels and SNPs from variants into seq using contig.
-    int _materializeSmallVariants(seqan::Dna5String & seq, TJournalEntries & journal,
+    int _materializeSmallVariants(seqan::Dna5String & seq,
+                                  TJournalEntries & journal,
+                                  MethylationLevels & levelSmallVariants,
                                   seqan::Dna5String const & contig,
-                                  Variants const & variants, int /*rId*/, int hId)
+                                  Variants const & variants,
+                                  MethylationLevels const & levels,
+                                  int /*rId*/,
+                                  int hId)
     {
         reinit(journal, length(contig));
 
@@ -2244,7 +2283,8 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
 
     addOption(parser, seqan::ArgParseOption("", "methylation-levels", "Enable simulation of methylation levels."));
 
-    addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "Path to write methylation levels to as FASTA.",
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "Path to write methylation levels to as FASTA.  "
+                                            "Only written if \\fB-of\\fP/\\fB--out-fasta\\fP is given.",
                                             seqan::ArgParseOption::OUTPUTFILE, "FILE"));
     setValidValues(parser, "meth-fasta-out", "fa fasta");
 
@@ -2359,6 +2399,9 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
             "entries for the original and each haplotype;  the levels for the forward and the reverse strand.  The "
             "sequence will be ASCII characters 0, starting at '!' encoding the level in 1.25% steps.  The character "
             "'>' is ignored and encodes no level.");
+    addText(parser,
+            "Methylation level simulation increases the memory usage of the program by one byte for each character "
+            "in the largest contig.");
     // TODO(holtgrew): Simulate different levels for each haplotype?
             
     // Parse command line.
