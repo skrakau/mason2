@@ -48,7 +48,7 @@
 #include <seqan/random.h>
 #include <seqan/sequence.h>
 #include <seqan/seq_io.h>
-#include <seqan/vcf.h>
+#include <seqan/vcf_io.h>
 #include <seqan/sequence_journaled.h>
 
 #include "variation_size_tsv.h"
@@ -129,10 +129,30 @@ struct MasonVariatorOptions
     int minSVSize;
     int maxSVSize;
 
+    // ----------------------------------------------------------------------
+    // Methylation Simulation
+    // ----------------------------------------------------------------------
+
+    // Enable simulation of methylation levels.
+    bool simulateMethylationLevels;
+    // Path to write methylation rates to.  There will be one sequence entry for the reference and one entry for each
+    // haplotype.  The probability will be encoded in ASCII characters 33-114, at a resolution of 1.25%, ">" is ignored.
+    seqan::CharString methFastaOutFile;
+    // Median and standard deviation for picking methylation level for all Cs.
+    double methMuC, methSigmaC;
+    // Median and standard deviation for picking methylation level for CpGs.
+    double methMuCG, methSigmaCG;
+    // Median and standard deviation for picking methylation level for CHGs.
+    double methMuCHG, methSigmaCHG;
+    // Median and standard deviation for picking methylation level for CHHs.
+    double methMuCHH, methSigmaCHH;
+
     MasonVariatorOptions() :
             verbosity(1), seed(0),
             snpRate(0), smallIndelRate(0), minSmallIndelSize(0), maxSmallIndelSize(0), svIndelRate(0),
-            svInversionRate(0), svTranslocationRate(0), svDuplicationRate(0), minSVSize(0), maxSVSize(0)
+            svInversionRate(0), svTranslocationRate(0), svDuplicationRate(0), minSVSize(0), maxSVSize(0),
+            simulateMethylationLevels(false), methMuC(0), methSigmaC(0), methMuCG(0), methSigmaCG(0),
+            methMuCHG(0), methSigmaCHG(0), methMuCHH(0), methSigmaCHH(0)
     {}
 };
 
@@ -163,6 +183,18 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "\n"
         << "MIN SV SIZE          \t" << options.minSVSize << "\n"
         << "MAX SV SIZE          \t" << options.maxSVSize << "\n"
+        << "\n"
+        << "SIM. METHYL. LEVELS  \t" << options.simulateMethylationLevels << "\n"
+        << "METHYLATION OUT FILE \t" << options.methFastaOutFile << "\n"
+        << "METHYLATION LEVELS\n"
+        << "  C   MU             \t" << options.methMuC << "\n"
+        << "  C   SIGMA          \t" << options.methSigmaC << "\n"
+        << "  CG  MU             \t" << options.methMuCG << "\n"
+        << "  CG  SIGMA          \t" << options.methSigmaCG << "\n"
+        << "  CHG MU             \t" << options.methMuCHG << "\n"
+        << "  CHG SIGMA          \t" << options.methSigmaCHG << "\n"
+        << "  CHH MU             \t" << options.methMuCHH << "\n"
+        << "  CHH SIGMA          \t" << options.methSigmaCHH << "\n"
         << "\n";
 }
 
@@ -1401,8 +1433,8 @@ public:
 
         // Create VCF vcfRecord.
         seqan::VcfRecord vcfRecord;
-        vcfRecord.chromId = rId;
-        vcfRecord.pos = pos.second;
+        vcfRecord.rID = rId;
+        vcfRecord.beginPos = pos.second;
         // TODO(holtgrew): Generate an id?
         appendValue(vcfRecord.ref, from);
         for (unsigned i = 0; i < 4; ++i)
@@ -1477,8 +1509,8 @@ public:
 
         // Create VCF record.
         seqan::VcfRecord vcfRecord;
-        vcfRecord.chromId = front(records).rId;
-        vcfRecord.pos = front(records).pos;
+        vcfRecord.rID = front(records).rId;
+        vcfRecord.beginPos = front(records).pos;
         // TODO(holtgrew): Generate an id?
         vcfRecord.filter = "PASS";
         vcfRecord.info = ".";
@@ -1495,7 +1527,7 @@ public:
             else  // if (records[i].size < 0)
                 numRef = std::max(numRef, 1 - records[i].size);
         }
-        append(vcfRecord.ref, infix(contig, vcfRecord.pos - 1, vcfRecord.pos - 1 + numRef));
+        append(vcfRecord.ref, infix(contig, vcfRecord.beginPos - 1, vcfRecord.beginPos - 1 + numRef));
 
         // Compute ALT columns and a map to the ALT.
         seqan::String<int> toIds;
@@ -1547,8 +1579,8 @@ public:
 
         // Create VCF record.
         seqan::VcfRecord vcfRecord;
-        vcfRecord.chromId = svRecord.rId;
-        vcfRecord.pos = svRecord.pos;
+        vcfRecord.rID = svRecord.rId;
+        vcfRecord.beginPos = svRecord.pos;
         // TODO(holtgrew): Generate an id?
         vcfRecord.filter = "PASS";
         std::stringstream ss;
@@ -1566,7 +1598,7 @@ public:
             numRef = 1;
         else
             numRef = 1 - svRecord.size;
-        append(vcfRecord.ref, infix(contig, vcfRecord.pos - 1, vcfRecord.pos - 1 + numRef));
+        append(vcfRecord.ref, infix(contig, vcfRecord.beginPos - 1, vcfRecord.beginPos - 1 + numRef));
 
         // Compute ALT columns and a map to the ALT.
         if (svRecord.size > 0)  // insertion
@@ -1607,44 +1639,44 @@ public:
         // In this function, we will create VCF records left and right of both cut positions and of the paste position.
         seqan::VcfRecord leftOfCutL, rightOfCutL, leftOfCutR, rightOfCutR, leftOfPaste, rightOfPaste;
         // CHROM ID
-        leftOfCutL.chromId = svRecord.rId;
-        rightOfCutL.chromId = svRecord.rId;
-        leftOfCutR.chromId = svRecord.rId;
-        rightOfCutR.chromId = svRecord.rId;
-        leftOfPaste.chromId = svRecord.rId;
-        rightOfPaste.chromId = svRecord.rId;
+        leftOfCutL.rID = svRecord.rId;
+        rightOfCutL.rID = svRecord.rId;
+        leftOfCutR.rID = svRecord.rId;
+        rightOfCutR.rID = svRecord.rId;
+        leftOfPaste.rID = svRecord.rId;
+        rightOfPaste.rID = svRecord.rId;
         // POS
-        leftOfCutL.pos = svRecord.pos - 1;
-        rightOfCutL.pos = svRecord.pos;
-        leftOfCutR.pos = svRecord.pos - 1 + svRecord.size;
-        rightOfCutR.pos = svRecord.pos + svRecord.size;
-        leftOfPaste.pos = svRecord.targetPos - 1;
-        rightOfPaste.pos = svRecord.targetPos;
+        leftOfCutL.beginPos = svRecord.pos - 1;
+        rightOfCutL.beginPos = svRecord.pos;
+        leftOfCutR.beginPos = svRecord.pos - 1 + svRecord.size;
+        rightOfCutR.beginPos = svRecord.pos + svRecord.size;
+        leftOfPaste.beginPos = svRecord.targetPos - 1;
+        rightOfPaste.beginPos = svRecord.targetPos;
         // TODO(holtgrew): INFO entry with type of breakend?
         // ID (none)
         // TODO(holtgrew): Generate an id?
         // REF
-        appendValue(leftOfCutL.ref, contig[leftOfCutL.pos]);
-        appendValue(rightOfCutL.ref, contig[rightOfCutL.pos]);
-        appendValue(leftOfCutR.ref, contig[leftOfCutR.pos]);
-        appendValue(rightOfCutR.ref, contig[rightOfCutR.pos]);
-        appendValue(leftOfPaste.ref, contig[leftOfPaste.pos]);
-        appendValue(rightOfPaste.ref, contig[rightOfPaste.pos]);
+        appendValue(leftOfCutL.ref, contig[leftOfCutL.beginPos]);
+        appendValue(rightOfCutL.ref, contig[rightOfCutL.beginPos]);
+        appendValue(leftOfCutR.ref, contig[leftOfCutR.beginPos]);
+        appendValue(rightOfCutR.ref, contig[rightOfCutR.beginPos]);
+        appendValue(leftOfPaste.ref, contig[leftOfPaste.beginPos]);
+        appendValue(rightOfPaste.ref, contig[rightOfPaste.beginPos]);
         // ALT
         std::stringstream ssLeftOfCutL, ssRightOfCutL, ssLeftOfCutR, ssRightOfCutR,
                 ssLeftOfPaste, ssRightOfPaste;
         seqan::CharString refName = vcfStream.header.sequenceNames[svRecord.rId];
-        ssLeftOfCutL << leftOfCutL.ref << "]" << refName << ":" << (rightOfCutR.pos + 1) << "]";
+        ssLeftOfCutL << leftOfCutL.ref << "]" << refName << ":" << (rightOfCutR.beginPos + 1) << "]";
         leftOfCutL.alt = ssLeftOfCutL.str();
-        ssRightOfCutL << "[" << refName << ":" << (leftOfPaste.pos + 1) << "[" << rightOfCutL.ref;
+        ssRightOfCutL << "[" << refName << ":" << (leftOfPaste.beginPos + 1) << "[" << rightOfCutL.ref;
         rightOfCutL.alt = ssRightOfCutL.str();
-        ssLeftOfCutR << leftOfCutR.ref << "]" << refName << ":" << (rightOfPaste.pos + 1) << "]";
+        ssLeftOfCutR << leftOfCutR.ref << "]" << refName << ":" << (rightOfPaste.beginPos + 1) << "]";
         leftOfCutR.alt = ssLeftOfCutR.str();
-        ssRightOfCutR << "[" << refName << ":" << (leftOfCutL.pos + 1) << "[" << rightOfCutR.ref;
+        ssRightOfCutR << "[" << refName << ":" << (leftOfCutL.beginPos + 1) << "[" << rightOfCutR.ref;
         rightOfCutR.alt = ssRightOfCutR.str();
-        ssLeftOfPaste << leftOfPaste.ref << "]" << refName << ":" << (leftOfCutR.pos + 1) << "]";
+        ssLeftOfPaste << leftOfPaste.ref << "]" << refName << ":" << (leftOfCutR.beginPos + 1) << "]";
         leftOfPaste.alt = ssLeftOfPaste.str();
-        ssRightOfPaste << "[" << refName << ":" << (rightOfCutL.pos + 1) << "[" << rightOfPaste.ref;
+        ssRightOfPaste << "[" << refName << ":" << (rightOfCutL.beginPos + 1) << "[" << rightOfPaste.ref;
         rightOfPaste.alt = ssRightOfPaste.str();
         // FILTER
         leftOfCutL.filter = "PASS";
@@ -1718,10 +1750,10 @@ public:
             std::cerr << "inversion\t" << svRecord << "\n";
         seqan::VcfRecord vcfRecord;
 
-        vcfRecord.chromId = svRecord.rId;
-        vcfRecord.pos = svRecord.pos;
+        vcfRecord.rID = svRecord.rId;
+        vcfRecord.beginPos = svRecord.pos;
         // TODO(holtgrew): Generate an id?
-        appendValue(vcfRecord.ref, contig[vcfRecord.pos]);
+        appendValue(vcfRecord.ref, contig[vcfRecord.beginPos]);
         vcfRecord.alt = "<INV>";
         vcfRecord.filter = "PASS";
         std::stringstream ss;
@@ -1758,15 +1790,15 @@ public:
 
         // Create VCF record.
         seqan::VcfRecord vcfRecord;
-        vcfRecord.chromId = svRecord.rId;
-        vcfRecord.pos = svRecord.pos;
+        vcfRecord.rID = svRecord.rId;
+        vcfRecord.beginPos = svRecord.pos;
         // TODO(holtgrew): Generate an id?
         vcfRecord.filter = "PASS";
         std::stringstream ss;
         ss << "SVTYPE=DUP;SVLEN=" << svRecord.size << ";END=" << svRecord.pos + svRecord.size
            << ";TARGETPOS=" << vcfStream.header.sequenceNames[svRecord.targetRId] << ":" << svRecord.targetPos;
         vcfRecord.info = ss.str();
-        appendValue(vcfRecord.ref, contig[vcfRecord.pos]);
+        appendValue(vcfRecord.ref, contig[vcfRecord.beginPos]);
         vcfRecord.alt = "<DUP>";
 
         // Create genotype infos.
@@ -1955,6 +1987,69 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     setDefaultValue(parser, "max-sv-size", "1000");
 
     // ----------------------------------------------------------------------
+    // Methylation Simulation Options
+    // ----------------------------------------------------------------------
+
+    addSection(parser, "Methylation Rates");
+
+    addOption(parser, seqan::ArgParseOption("", "methylation-levels", "Enable simulation of methylation levels."));
+
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "Path to write methylation levels to as FASTA.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "FILE"));
+    setValidValues(parser, "meth-fasta-out", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-c-mu", "Median of beta distribution for methylation "
+                                            "level of cytosine.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-c-mu", "0");
+    setMaxValue(parser, "meth-c-mu", "1");
+    setDefaultValue(parser, "meth-c-mu", "0.0001");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-c-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of cytosine.", seqan::ArgParseOption::DOUBLE, "SIGMA"));
+    setMinValue(parser, "meth-c-sigma", "0");
+    setMaxValue(parser, "meth-c-sigma", "1");
+    setDefaultValue(parser, "meth-c-sigma", "0.00001");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-cg-mu", "Median of beta distribution for methylation "
+                                            "level of CpG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-cg-mu", "0");
+    setMaxValue(parser, "meth-cg-mu", "1");
+    setDefaultValue(parser, "meth-cg-mu", "0.6");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-cg-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CpG loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-cg-sigma", "0");
+    setMaxValue(parser, "meth-cg-sigma", "1");
+    setDefaultValue(parser, "meth-cg-sigma", "0.03");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chg-mu", "Median of beta distribution for methylation "
+                                            "level of CHG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-chg-mu", "0");
+    setMaxValue(parser, "meth-chg-mu", "1");
+    setDefaultValue(parser, "meth-chg-mu", "0.08");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chg-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CHG loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-chg-sigma", "0");
+    setMaxValue(parser, "meth-chg-sigma", "1");
+    setDefaultValue(parser, "meth-chg-sigma", "0.008");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chh-mu", "Median of beta distribution for methylation "
+                                            "level of CHH loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-chh-mu", "0");
+    setMaxValue(parser, "meth-chh-mu", "1");
+    setDefaultValue(parser, "meth-chh-mu", "0.05");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chh-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CHH loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-chh-sigma", "0");
+    setMaxValue(parser, "meth-chh-sigma", "1");
+    setDefaultValue(parser, "meth-chh-sigma", "0.005");
+
+    // ----------------------------------------------------------------------
     // Simulation Details Section
     // ----------------------------------------------------------------------
 
@@ -1998,6 +2093,22 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     addListItem(parser, "CTR", "An intra-chromosomal translocation.");
     addListItem(parser, "DUP", "A duplication");
 
+    // ----------------------------------------------------------------------
+    // Methylation Level Simulation
+    // ----------------------------------------------------------------------
+
+    addTextSection(parser, "Methylation Level Simulation");
+    addText(parser,
+            "Simulation of cytosine methylation levels is done using a beta distribution.  There is one distribution "
+            "each for cytosines in the context CpG, CHG, and CHH and one distribution for all other cytonsines.  You "
+            "can give the parameters mu and sigma of the beta distributions.  The methylation level is determined once "
+            "for each base of the reference (0 for all non-cytosines) and stored in a string of levels.  This string "
+            "is then modified as small and structural variations are simualted.");
+    addText(parser,
+            "The simulated methylation levels can then be written out to a FASTA file.  This file will contain one entry "
+            "for the original and each haplotype.  The sequence will be ASCII characters 0, starting at '!' encoding the "
+            "level in 1.25% steps.  The character '>' is ignored and encodes no level.");
+            
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
 
@@ -2035,6 +2146,17 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.svDuplicationRate, parser, "sv-duplication-rate");
     getOptionValue(options.minSVSize, parser, "min-sv-size");
     getOptionValue(options.maxSVSize, parser, "max-sv-size");
+
+    getOptionValue(options.simulateMethylationLevels, parser, "methylation-levels");
+    getOptionValue(options.methFastaOutFile, parser, "meth-fasta-out");
+    getOptionValue(options.methMuC, parser, "meth-c-mu");
+    getOptionValue(options.methSigmaC, parser, "meth-c-sigma");
+    getOptionValue(options.methMuCG, parser, "meth-cg-mu");
+    getOptionValue(options.methSigmaCG, parser, "meth-cg-sigma");
+    getOptionValue(options.methMuCHG, parser, "meth-chg-mu");
+    getOptionValue(options.methSigmaCHG, parser, "meth-chg-sigma");
+    getOptionValue(options.methMuCHH, parser, "meth-chh-mu");
+    getOptionValue(options.methSigmaCHH, parser, "meth-chh-sigma");
 
     return seqan::ArgumentParser::PARSE_OK;
 }
