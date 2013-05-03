@@ -52,8 +52,6 @@
 
 // This struct stores the options from the command line.
 //
-// You might want to rename this to reflect the name of your app.
-
 struct MasonFragmentsOptions
 {
     // Enum for selecting size distribution.
@@ -63,13 +61,28 @@ struct MasonFragmentsOptions
         UNIFORM
     };
 
+    // Enum for selecting the BS-seq protocol (directional vs. undirectional).
+    enum BSProtocol
+    {
+        DIRECTIONAL,
+        UNDIRECTIONAL
+    };
+
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
+
+    // -----------------------------------------------------------------------
+    // Input / Output Options
+    // -----------------------------------------------------------------------
 
     // The input file name.
     seqan::CharString inputFilename;
     // The output file name.
     seqan::CharString outputFilename;
+
+    // -----------------------------------------------------------------------
+    // Fragment Simulation Options
+    // -----------------------------------------------------------------------
 
     // The seed to use for the RNG.
     int seed;
@@ -90,9 +103,24 @@ struct MasonFragmentsOptions
     // The fragment size standard deviation, used when distribution is NORMAL.
     int stdDevFragmentSize;
 
+    // -----------------------------------------------------------------------
+    // BS-Seq Simulation Options
+    // -----------------------------------------------------------------------
+
+    // Whether or not to BS-seq methylation simulation.  Set to !empty(methLevelsInFasta).
+    bool bsSimEnabled;
+    // Path to FASTA file with methylation levels.  The levels of 0-100% are encoded in steps of 1.25% in ASCII
+    // characters starting with '!'.  '>' is skipped and may not occur in the input.
+    seqan::CharString methLevelsInFasta;
+    // The rate for unmethylated Cs to become Ts.
+    double bsConversionRate;
+    // The protocol to use for the simulation.
+    BSProtocol bsProtocol;
+
     MasonFragmentsOptions() :
             verbosity(1), seed(0), numFragments(0), embedSamplingInfo(0), distribution(NORMAL), minFragmentSize(0),
-            maxFragmentSize(0), meanFragmentSize(0), stdDevFragmentSize(0)
+            maxFragmentSize(0), meanFragmentSize(0), stdDevFragmentSize(0), bsSimEnabled(false), bsConversionRate(0),
+            bsProtocol(DIRECTIONAL)
     {}
 };
 
@@ -179,11 +207,46 @@ parseCommandLine(MasonFragmentsOptions & options, int argc, char const ** argv)
     setValidValues(parser, "out-file", "fa fasta");
     setRequired(parser, "out-file");
 
+    // BS-Seq Options
+    addSection(parser, "BS-Seq Options");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-levels-in", "Methylation levels FASTA input.  "
+                                            "If given, BS-Seq simulation is enabled.",
+                                            seqan::ArgParseOption::INPUTFILE, "FILE"));
+    setValidValues(parser, "meth-levels-in", "fa fasta");
+    setRequired(parser, "meth-levels-in");
+
+    addOption(parser, seqan::ArgParseOption("", "bs-conversion-rate", "Methylation conversion rate.",
+                                            seqan::ArgParseOption::DOUBLE, "RATE"));
+    setMinValue(parser, "bs-conversion-rate", "0.0");
+    setMaxValue(parser, "bs-conversion-rate", "1.0");
+    setDefaultValue(parser, "bs-conversion-rate", "0.98");
+
+    addOption(parser, seqan::ArgParseOption("", "bs-protocol", "Methylation protocol.",
+                                            seqan::ArgParseOption::STRING, "STR"));
+    setValidValues(parser, "bs-protocol", "directional undirectional");
+    setDefaultValue(parser, "bs-protocol", "directional");
+
     // Add Examples Section.
     addTextSection(parser, "Examples");
     addListItem(parser, "\\fBmason_fragments\\fP \\fB-n\\fP 1000 \\fB-i\\fP \\fIgenome.fa\\fP \\fB-o\\fP \\fIfragments.fa\\fP",
                 "Simulate 1000 fragments of file \\fIgenome.fa\\fP and write them to \\fIfragments.fa\\fP.  The "
                 "fragments will be simulated using the default configuration.");
+
+    // Add BS-Seq Section.
+    addTextSection(parser, "BS-Seq Simulation");
+    addText(parser,
+            "If \\fB--bs-levels-in\\fP is given, methylation levels are loaded for each element in "
+            "\\fB--in-file\\fP.  The methylation levels for the TOP strand are expected to have the "
+            "name of the contig with the suffix \"/TOP\", the name of the bottom strand is expected "
+            "to have the suffix \"/BOT\".");
+    addText(parser,
+            "The sequence characters encode the values 0..80 with an offset of 33 (\"!\" = 0).  "
+            "The character \">\" is skipped.");
+    addText(parser,
+            "When simulating, we simulate for each C whether it is methylated.  Methylated Cs are "
+            "kept intact.  Unmethylated Cs are converted into Ts with a probability given by "
+            "\\fB--bs-conversion-rate\\fP.");
 
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
@@ -219,6 +282,14 @@ parseCommandLine(MasonFragmentsOptions & options, int argc, char const ** argv)
     getOptionValue(options.meanFragmentSize, parser, "mean-size");
     getOptionValue(options.stdDevFragmentSize, parser, "size-stddev");
 
+    getOptionValue(options.methLevelsInFasta, parser, "meth-levels-in");
+    options.bsSimEnabled = !empty(options.methLevelsInFasta);
+    getOptionValue(options.bsConversionRate, parser, "bs-conversion-rate");
+
+    getOptionValue(tmp, parser, "bs-protocol");
+    options.bsProtocol = (tmp == "directional") ?
+            MasonFragmentsOptions::DIRECTIONAL : MasonFragmentsOptions::UNDIRECTIONAL;
+
     if (options.minFragmentSize > options.maxFragmentSize)
     {
         std::cerr << "ERROR: --min-size must not be greater than --max-size.";
@@ -235,6 +306,22 @@ parseCommandLine(MasonFragmentsOptions & options, int argc, char const ** argv)
 char const * distributionStr(MasonFragmentsOptions::Distribution d)
 {
     return (d == MasonFragmentsOptions::NORMAL) ? "NORMAL" : "UNIFORM";
+}
+
+char const * yesNo(bool b)
+{
+    return b ? "YES" : "NO";
+}
+
+char const * bsProtocolStr(MasonFragmentsOptions::BSProtocol p)
+{
+    switch (p)
+    {
+        case MasonFragmentsOptions::DIRECTIONAL:
+            return "DIRECTIONAL";
+        default:
+            return "UNDIRECTIONAL";
+    }
 }
 
 // Program entry point.
@@ -272,7 +359,14 @@ int main(int argc, char const ** argv)
                   << "MIN SIZE      \t" << options.minFragmentSize << "\n"
                   << "MAX SIZE      \t" << options.maxFragmentSize << "\n"
                   << "MEAN SIZE     \t" << options.meanFragmentSize << "\n"
-                  << "SIZE STD DEV  \t" << options.stdDevFragmentSize << "\n\n";
+                  << "SIZE STD DEV  \t" << options.stdDevFragmentSize << "\n"
+                  << "\n"
+                  << "BS-SEQ SIMULATION\n"
+                  << "  ENABLED     \t" << yesNo(options.bsSimEnabled) << "\n"
+                  << "  PROTOCOL    \t" << bsProtocolStr(options.bsProtocol) << "\n"
+                  << "  METH LEVELS \t" << options.methLevelsInFasta << "\n"
+                  << "  CONVERSION  \t" << options.bsConversionRate << "\n"
+                  << "\n";
     }
 
     std::cerr << "__PREPARATION________________________________________________________________\n"
