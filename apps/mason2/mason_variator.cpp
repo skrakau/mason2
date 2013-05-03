@@ -216,6 +216,12 @@ struct MethylationLevels
         seqan::resize(reverse, len, '!');
     }
 
+    void clear()
+    {
+        seqan::clear(forward);
+        seqan::clear(reverse);
+    }
+
     // Translate character in forward/reverse to level (0..80).
     inline char charToLevel(char c)
     {
@@ -311,7 +317,7 @@ public:
         handleThreeMer(levels, 0, value(shape3));
         ++it;
         unsigned pos = 1;
-        for (; it != itEnd; ++it, ++pos)
+        for (; (pos + 3 < length(contig)) && (it != itEnd); ++it, ++pos)
         {
             hashNext(shape2, it);
             hashNext(shape3, it);
@@ -319,10 +325,13 @@ public:
             handleTwoMer(levels, pos, value(shape2));
             handleThreeMer(levels, pos, value(shape3));
         }
-        handleOneMer(levels, pos, ordValue(*it));
-        handleTwoMer(levels, pos++, value(shape2));
+        if (pos < length(contig))
+            handleOneMer(levels, pos, ordValue(*it));
+        if (pos + 1 < length(contig))
+            handleTwoMer(levels, pos++, value(shape2));
         hashNext(shape2, it++);
-        handleOneMer(levels, pos, ordValue(*it));
+        if (pos < length(contig))
+            handleOneMer(levels, pos, ordValue(*it));
     }
 
     // Handle 3mer, forward case.
@@ -333,9 +342,8 @@ public:
             case 27:  // CHG, symmetric
             case 32:
             case 42:
-                // std::cerr << "CHG\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHG));
-                levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCHG));
+                levels.setLevelR(pos + 2, pickRandomNumber(rng, pdfCHG));
                 break;
             case 25:  // CHH
             case 26:
@@ -346,7 +354,6 @@ public:
             case 40:
             case 41:
             case 43:
-                // std::cerr << "CHH\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHH));
                 break;
             case 2:  // rc(CHH)
@@ -358,7 +365,6 @@ public:
             case 77:
             case 87:
             case 92:
-                // std::cerr << "rc(CHH)\n";
                 levels.setLevelF(pos + 2, pickRandomNumber(rng, pdfCHH));
                 break;
             default:
@@ -367,12 +373,11 @@ public:
         }
     }
 
-    // Handle 2mer, forward case.
+    // Handle 2mer.
     void handleTwoMer(MethylationLevels & levels, unsigned pos, unsigned hashValue)
     {
         if (hashValue == 7)  // CpG forward (symmetric, also reverse)
         {
-            // std::cerr << "CpG\n";
             levels.setLevelF(pos, pickRandomNumber(rng, pdfCG));
             levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCG));
         }
@@ -382,15 +387,9 @@ public:
     void handleOneMer(MethylationLevels & levels, unsigned pos, unsigned val)
     {
         if (val == 1)   // C forward
-        {
-            // std::cerr << "C\n";
             levels.setLevelF(pos, pickRandomNumber(rng, pdfC));
-        }
         else if (val == 2)  // C reverse (G)
-        {
-            // std::cerr << "G\n";
             levels.setLevelR(pos, pickRandomNumber(rng, pdfC));
-        }
     }
 };
 
@@ -565,7 +564,7 @@ struct StructuralVariantRecord
                     return (query == pos || query == pos + 1);
                 else
                     return (query == pos || query == pos + 1 ||
-                            query == pos + size || query == pos + size + 1);
+                            query == pos - size || query == pos - size + 1);
             case INVERSION:
                     return (query == pos || query == pos + 1 ||
                             query == pos + size || query == pos + size + 1);
@@ -860,6 +859,8 @@ public:
     bool simulateSVIndel(Variants & variants, int haploCount, int rId, unsigned pos, int size)
     {
         // Indels are simulated for one haplotype only.
+        if (options.verbosity >= 2)
+            std::cerr << "Simulating SV INDEL size = " << size << '\n';
         int hId = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, haploCount - 1));
         seqan::CharString indelSeq;
         reserve(indelSeq, options.maxSVSize);
@@ -958,12 +959,18 @@ public:
             {
                 // Skip if near breakend.
                 skip = svRecord.nearBreakend(pos);
+
+                if (options.verbosity >= 3)
+                    std::cerr << " FROM " << svRecord;
                 
                 svIdx += 1;
                 if (svIdx < length(variants.svRecords))
                     svRecord = variants.svRecords[svIdx];
                 else
                     svRecord.pos = -1;  // mark as sentinel
+
+                if (options.verbosity >= 3)
+                    std::cerr << " TO " << svRecord << "\n";
             }
             // Skip if pos is near the SV breakend.
             if (skip || svRecord.nearBreakend(pos))
@@ -994,6 +1001,8 @@ public:
             // is no variation in the deleted sequence.
             if (isSnp)
             {
+                if (options.verbosity >= 3)
+                    std::cerr << "Simulating SNP at (" << rId << ", " << pos << ")\n";
                 simulateSnp(variants, seq, haploCount, rId, pos);
             }
             else if (isIndel)
@@ -1390,8 +1399,10 @@ public:
             if (options.verbosity >= 2)
                 std::cerr << "  Translating SvRecord\n  " << svRecord << '\n';
             svRecord.pos = hostToVirtualPosition(journal, svRecord.pos);
-            svRecord.size = hostToVirtualPosition(journal, svRecord.pos + svRecord.size) -
-                    hostToVirtualPosition(journal, svRecord.pos);
+            // We do not need to adjust the sizes for insertions.
+            if (svRecord.kind != StructuralVariantRecord::INDEL && svRecord.size < 0)
+                svRecord.size = hostToVirtualPosition(journal, svRecord.pos + svRecord.size) -
+                        hostToVirtualPosition(journal, svRecord.pos);
             if (svRecord.targetPos != -1)
                 svRecord.targetPos = hostToVirtualPosition(journal, svRecord.targetPos);
             if (options.verbosity >= 2)
@@ -1497,14 +1508,18 @@ public:
     // Apply small indels and SNPs from variants into seq using contig.
     int _materializeSmallVariants(seqan::Dna5String & seq,
                                   TJournalEntries & journal,
-                                  MethylationLevels & levelSmallVariants,
+                                  MethylationLevels & levelsSmallVariants,
                                   seqan::Dna5String const & contig,
                                   Variants const & variants,
                                   MethylationLevels const & levels,
                                   int /*rId*/,
                                   int hId)
     {
+        // Clear journal and output methylation variable.
         reinit(journal, length(contig));
+        levelsSmallVariants.clear();
+        // Store variation points with a flag whether it is a SNP (true) or a breakpoint (false).
+        seqan::String<std::pair<int, bool> > varPoints;
 
         // Fors this, we have to iterate in parallel over SNP and small indel records.
         //
@@ -1538,8 +1553,16 @@ public:
                 {
                     if (options.verbosity >= 3)
                         std::cerr << "append(seq, infix(contig, " << lastPos << ", " << snpRecord.pos << ") " << __LINE__ << "\n";
-                    append(seq, infix(contig, lastPos, snpRecord.pos));  // interim chars
-                       
+                    // Append interim sequence and methylation levels.
+                    append(seq, infix(contig, lastPos, snpRecord.pos));
+                    if (options.simulateMethylationLevels)
+                    {
+                        append(levelsSmallVariants.forward, infix(levels.forward, lastPos, snpRecord.pos + 1));
+                        append(levelsSmallVariants.reverse, infix(levels.reverse, lastPos, snpRecord.pos + 1));
+                        appendValue(varPoints, std::make_pair(length(seq), true));      // variation points before/after SNP
+                        appendValue(varPoints, std::make_pair(length(seq) + 1, true));
+                    }
+
                     SEQAN_ASSERT_GEQ(snpRecord.pos, lastPos);
                     if (options.verbosity >= 3)
                         std::cerr << "appendValue(seq, " << snpRecord.to << "')\n";
@@ -1562,12 +1585,35 @@ public:
                     {
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << smallIndelRecord.pos << ") " << __LINE__ << "\n";
-                        append(seq, infix(contig, lastPos, smallIndelRecord.pos));  // interim chars
+
+                        // Simulate methylation levels for insertion.
+                        MethylationLevels lvls;
+                        if (options.simulateMethylationLevels)
+                        {
+                            MethylationLevelSimulator methSim(rng, options);
+                            methSim.run(lvls, smallIndelRecord.seq);
+                        }
+
+                        // Append interim sequence and methylation levels.
+                        append(seq, infix(contig, lastPos, smallIndelRecord.pos));
+                        if (options.simulateMethylationLevels)
+                        {
+                            append(levelsSmallVariants.forward, infix(levels.forward, lastPos, smallIndelRecord.pos));
+                            append(levelsSmallVariants.reverse, infix(levels.reverse, lastPos, smallIndelRecord.pos));
+                            appendValue(varPoints, std::make_pair(length(seq), false));  // variation point before insertion
+                        }
 
                         SEQAN_ASSERT_GEQ(smallIndelRecord.pos, lastPos);
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, \"" << smallIndelRecord.seq << "\") " << __LINE__ << "\n";
+                        // Append novel sequence and methylation levels.
                         append(seq, smallIndelRecord.seq);
+                        if (options.simulateMethylationLevels)
+                        {
+                            append(levelsSmallVariants.forward, lvls.forward);
+                            append(levelsSmallVariants.reverse, lvls.reverse);
+                            appendValue(varPoints, std::make_pair(length(seq), false));  // variation point after insertion
+                        }
                         lastPos = smallIndelRecord.pos;
                         recordInsertion(journal, hostToVirtualPosition(journal, smallIndelRecord.pos),
                                         0, smallIndelRecord.size);
@@ -1578,7 +1624,15 @@ public:
                     {
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << smallIndelRecord.pos << ") " << __LINE__ << "\n";
+                        // Append interim sequence and methylation levels.
                         append(seq, infix(contig, lastPos, smallIndelRecord.pos));  // interim chars
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));  // variation point at deletion
+                            append(levelsSmallVariants.forward, infix(levels.forward, lastPos, smallIndelRecord.pos));
+                            append(levelsSmallVariants.reverse, infix(levels.reverse, lastPos, smallIndelRecord.pos));
+                        }
+
                         lastPos = smallIndelRecord.pos - smallIndelRecord.size;
                         if (options.verbosity >= 3)
                             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
@@ -1591,12 +1645,103 @@ public:
                     smallIndelRecord = variants.smallIndels[smallIndelIdx++];
             }
         }
-        // Insert interim characters.
+        // Insert remaining characters.
         if (options.verbosity >= 3)
             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ")\n";
         append(seq, infix(contig, lastPos, length(contig)));
 
+        if (options.simulateMethylationLevels)
+        {
+            append(levelsSmallVariants.forward, infix(levels.forward, lastPos, length(contig)));
+            append(levelsSmallVariants.reverse, infix(levels.reverse, lastPos, length(contig)));
+
+            SEQAN_ASSERT_EQ(length(seq), length(levelsSmallVariants.forward));
+            SEQAN_ASSERT_EQ(length(seq), length(levelsSmallVariants.reverse));
+
+            _fixVariationLevels(levelsSmallVariants, seq, varPoints);
+        }
+
+        // TODO(holtgrew): Adjust methylation levels around points.
+
         return 0;
+    }
+
+    // Recompute variation levels around the variation points varPoints (position, isSnp) with the given contig and
+    // levels.
+    void _fixVariationLevels(MethylationLevels & levels,
+                             seqan::Dna5String const & contig,
+                             seqan::String<std::pair<int, bool> > const & varPoints)
+    {
+        MethylationLevelSimulator methSim(rng, options);
+        seqan::Shape<seqan::Dna5> shape2, shape3;
+        resize(shape2, 2);
+        resize(shape3, 3);
+
+        for (unsigned i = 0; i < length(varPoints); ++i)
+        {
+            int pos = varPoints[i].first;
+            if (varPoints[i].second)  // is SNP
+            {
+                if (pos > 2)
+                {
+                    levels.forward[pos - 2] = levels.reverse[pos - 2] = '!';
+                    methSim.handleOneMer(levels, pos - 2, ordValue(contig[pos - 2]));
+                    methSim.handleTwoMer(levels, pos - 2, hash(shape2, iter(contig, pos - 2, seqan::Standard())));
+                    methSim.handleThreeMer(levels, pos - 2, hash(shape3, iter(contig, pos - 2, seqan::Standard())));
+                }
+                if (pos > 1)
+                {
+                    levels.forward[pos - 1] = levels.reverse[pos - 1] = '!';
+                    methSim.handleOneMer(levels, pos - 1, ordValue(contig[pos - 1]));
+                    methSim.handleTwoMer(levels, pos - 1, hash(shape2, iter(contig, pos - 1, seqan::Standard())));
+                }
+                levels.forward[pos] = levels.reverse[pos] = '!';
+                methSim.handleOneMer(levels, pos, ordValue(contig[pos]));
+                if (pos + 1 < (int)length(contig))
+                {
+                    levels.forward[pos + 1] = levels.reverse[pos + 1] = '!';
+                    methSim.handleOneMer(levels, pos + 1, ordValue(contig[pos + 1]));
+                    methSim.handleTwoMer(levels, pos, hash(shape2, iter(contig, pos, seqan::Standard())));
+                }
+                if (pos + 2 < (int)length(contig))
+                {
+                    levels.forward[pos + 2] = levels.reverse[pos + 2] = '!';
+                    methSim.handleOneMer(levels, pos + 2, ordValue(contig[pos + 2]));
+                    methSim.handleTwoMer(levels, pos + 1, hash(shape2, iter(contig, pos + 1, seqan::Standard())));
+                    methSim.handleThreeMer(levels, pos, hash(shape3, iter(contig, pos, seqan::Standard())));
+                }
+            }
+            else  // is no SNP but breakpoint
+            {
+                // TODO(holtgrew): Double-check for correctness, might recompute too much around breakpoints.
+                if (pos > 2)
+                {
+                    levels.forward[pos - 2] = levels.reverse[pos - 2] = '!';
+                    methSim.handleOneMer(levels, pos - 2, ordValue(contig[pos - 2]));
+                    methSim.handleTwoMer(levels, pos - 2, hash(shape2, iter(contig, pos - 2, seqan::Standard())));
+                    methSim.handleThreeMer(levels, pos - 2, hash(shape3, iter(contig, pos - 2, seqan::Standard())));
+                }
+                if (pos > 1)
+                {
+                    levels.forward[pos - 1] = levels.reverse[pos - 1] = '!';
+                    methSim.handleOneMer(levels, pos - 1, ordValue(contig[pos - 1]));
+                    methSim.handleTwoMer(levels, pos - 1, hash(shape2, iter(contig, pos - 1, seqan::Standard())));
+                }
+                levels.forward[pos] = levels.reverse[pos] = '!';
+                methSim.handleOneMer(levels, pos, ordValue(contig[pos]));
+                if (pos + 1 < (int)length(contig))
+                {
+                    methSim.handleTwoMer(levels, pos, hash(shape2, iter(contig, pos, seqan::Standard())));
+                    levels.forward[pos + 1] = levels.reverse[pos + 1] = '!';
+                    methSim.handleOneMer(levels, pos + 1, ordValue(contig[pos + 2]));
+                }
+                if (pos + 2 < (int)length(contig))
+                {
+                    methSim.handleTwoMer(levels, pos + 1, hash(shape2, iter(contig, pos + 1, seqan::Standard())));
+                    methSim.handleThreeMer(levels, pos, hash(shape3, iter(contig, pos, seqan::Standard())));
+                }
+            }
+        }
     }
 
     // Write out variants for the given contig to the VCF file.
@@ -1628,7 +1773,9 @@ public:
             if (snpRecord.rId != seqan::maxValue<int>() && smallIndelRecord.rId != seqan::maxValue<int>())
                 SEQAN_ASSERT(snpRecord.getPos() != smallIndelRecord.getPos());  // are generated indendently
             if (snpRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
-                SEQAN_ASSERT(snpRecord.getPos() != svRecord.getPos());  // are generated indendently
+                SEQAN_ASSERT_MSG(snpRecord.getPos() != svRecord.getPos(),
+                                 "Should be generated non-overlapping (snp pos = %d, sv pos = %d).",
+                                 snpRecord.pos, svRecord.pos);
             if (smallIndelRecord.rId != seqan::maxValue<int>() && svRecord.rId != seqan::maxValue<int>())
                 SEQAN_ASSERT(smallIndelRecord.getPos() != svRecord.getPos());  // are generated indendently
             SEQAN_ASSERT_NEQ(snpRecord.pos, 0);   // Not simulated, VCF complexer.
