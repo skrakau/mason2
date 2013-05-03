@@ -258,7 +258,7 @@ public:
             fragGenerator(rng, fragOptions)
     {
         // Build the partial sums.
-        resize(lengthSums, length(genome.seqs));
+        resize(lengthSums, length(genome.seqs), 0);
         for (unsigned i = 0; i < length(genome.seqs); ++i)
         {
             appendValue(lengthSums, length(genome.seqs[i]));
