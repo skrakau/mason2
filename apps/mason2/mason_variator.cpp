@@ -40,9 +40,8 @@
 // TODO(holtgrew): Currently, there only is support for left-to-right translocations.
 // TODO(holtgrew): Allow inversion in translocation.
 // TODO(holtgrew): Add support for parsing VCF.
-// TODO(holtgrew): What about shortcuts for SV duplications with target?
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
-// TODO(holtgrew): Does SV rate give the per position rate of the event or the number of bases related to an event? Per-base is OK, I guess, only has to be documented properly.
+// TODO(holtgrew): Methylation simulation for bottom seems weird.
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
@@ -225,7 +224,7 @@ struct MethylationLevels
     // Translate character in forward/reverse to level (0..80).
     inline char charToLevel(char c)
     {
-        if (c < '<')  // '<' cannot be used as value
+        if (c < '>')  // '>' cannot be used as value
             return c - 33;
         else
             return c - 34;
@@ -234,7 +233,7 @@ struct MethylationLevels
     // Translate level (0..80) to character in forward/reverse.
     inline char levelToChar(char c)
     {
-        if (c < ('<' - 33))  // '<' cannot be used as value
+        if (c + '!' < '>')
             return c + 33;
         else
             return c + 34;
@@ -243,7 +242,7 @@ struct MethylationLevels
     // Returns methylation level for forward strand at position i.
     inline float levelF(unsigned i)
     {
-        return (charToLevel(forward[i])) / 0.0125;
+        return (charToLevel(forward[i]) / 80.0) / 0.0125;
     }
 
     // Sets methylation level for forward strand at position i.
@@ -252,13 +251,15 @@ struct MethylationLevels
         SEQAN_ASSERT_GEQ(level, 0.0);
         SEQAN_ASSERT_LEQ(level, 1.0);
         // std::cerr << "forward[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
-        forward[i] = levelToChar(round(level / 0.0125));
+        char c = levelToChar(round(level / 0.0125));
+        SEQAN_ASSERT_NEQ((int)c, (int)'>');
+        forward[i] = c;
     }
 
     // Returns methylation level for reverse strand at position i.
     inline float levelR(unsigned i)
     {
-        return (charToLevel(reverse[i])) / 0.0125;
+        return (charToLevel(reverse[i]) / 80.0) / 0.0125;
     }
 
     // Sets methylation level for reverse strand at position i.
@@ -267,7 +268,9 @@ struct MethylationLevels
         SEQAN_ASSERT_GEQ(level, 0.0);
         SEQAN_ASSERT_LEQ(level, 1.0);
         // std::cerr << "reverse[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
-        reverse[i] = levelToChar(round(level / 0.0125));
+        char c = levelToChar(round(level / 0.0125));
+        SEQAN_ASSERT_NEQ((int)c, (int)'>');
+        reverse[i] = c;
     }
 };
 
@@ -308,13 +311,19 @@ public:
 
         // We will go over the contig with hashes to search for patterns efficiently.
         seqan::Shape<seqan::Dna5> shape2, shape3;
-        resize(shape2, 2);
-        resize(shape3, 3);
-        hash(shape2, it);
-        hash(shape3, it);
         handleOneMer(levels, 0, ordValue(contig[0]));
-        handleTwoMer(levels, 0, value(shape3));
-        handleThreeMer(levels, 0, value(shape3));
+        if (length(contig) >= 2u)
+        {
+            resize(shape2, 2);
+            hash(shape2, it);
+            handleTwoMer(levels, 0, value(shape2));
+        }
+        if (length(contig) >= 3u)
+        {
+            resize(shape3, 3);
+            hash(shape3, it);
+            handleThreeMer(levels, 0, value(shape3));
+        }
         ++it;
         unsigned pos = 1;
         for (; (pos + 3 < length(contig)) && (it != itEnd); ++it, ++pos)
@@ -328,8 +337,10 @@ public:
         if (pos < length(contig))
             handleOneMer(levels, pos, ordValue(*it));
         if (pos + 1 < length(contig))
+        {
+            hashNext(shape2, it++);
             handleTwoMer(levels, pos++, value(shape2));
-        hashNext(shape2, it++);
+        }
         if (pos < length(contig))
             handleOneMer(levels, pos, ordValue(*it));
     }
@@ -1215,12 +1226,15 @@ public:
     // Write out methylation levels to output file.
     //
     // levels -- levels
-    // hId -- haplotype id
+    // hId -- haplotype id, -1 for original
     // rId -- reference id
     int _writeMethylationLevels(MethylationLevels const & levels, int hId, int rId)
     {
         std::stringstream idTop;
-        idTop << sequenceName(faiIndex, rId) << options.haplotypeSep << hId << options.haplotypeSep << "TOP";
+        idTop << sequenceName(faiIndex, rId);
+        if (hId != -1)
+            idTop << options.haplotypeSep << hId;
+        idTop << options.haplotypeSep << "TOP";
         if (writeRecord(outMethLevelStream, idTop.str(), levels.forward) != 0)
         {
             std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
@@ -1228,7 +1242,10 @@ public:
         }
 
         std::stringstream idBottom;
-        idBottom << sequenceName(faiIndex, rId) << options.haplotypeSep << hId << options.haplotypeSep << "BOTTOM";
+        idBottom << sequenceName(faiIndex, rId);
+        if (hId != -1)
+            idBottom << options.haplotypeSep << hId;
+        idBottom << options.haplotypeSep << "BOT";
         if (writeRecord(outMethLevelStream, idBottom.str(), levels.reverse) != 0)
         {
             std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
@@ -1325,7 +1342,7 @@ public:
         {
             // Write out methylation levels for reference.
             if (options.simulateMethylationLevels && !empty(options.methFastaOutFile))
-                if (_writeMethylationLevels(methLevels, 0, rId) != 0)
+                if (_writeMethylationLevels(methLevels, -1, rId) != 0)
                     return 1;
             // Apply variations to contigs and write out.
             for (int hId = 0; hId < options.numHaplotypes; ++hId)
