@@ -373,7 +373,7 @@ int main(int argc, char const ** argv)
               << "\n";
 
     // Open reference FAI index.
-    std::cerr << "Loading reference     " << options.inputFilename << " ...";
+    std::cerr << "Loading reference       " << options.inputFilename << " ...";
     seqan::SequenceStream inGenome(toCString(options.inputFilename));
     if (!isGood(inGenome))
     {
@@ -392,13 +392,49 @@ int main(int argc, char const ** argv)
     genome.trimIds();
     std::cerr << " OK\n";
 
+    // Loading methylation levels.
+    std::cerr << "Loading Meth. Level FAI " << options.methLevelsInFasta << " ...";
+    seqan::FaiIndex lvlFaiIndex;
+    if (read(lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+    {
+        std::cerr << " FAILED (not fatal, we can just build it)\n";
+        std::cerr << "Building FAI          " << options.methLevelsInFasta << ".fai ...";
+        if (build(lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+        {
+            std::cerr << "Could not build FAI index.\n";
+            return 1;
+        }
+        std::cerr << " OK\n";
+        seqan::CharString faiPath = options.methLevelsInFasta;
+        append(faiPath, ".fai");
+        std::cerr << "Reference Index       " << faiPath << " ...";
+        if (write(lvlFaiIndex, toCString(faiPath)) != 0)
+        {
+            std::cerr << "Could not write FAI index we just built.\n";
+            return 1;
+        }
+        std::cerr << " OK (" << length(lvlFaiIndex.indexEntryStore) << " seqs)\n";
+    }
+    else
+    {
+        std::cerr << " OK (" << length(lvlFaiIndex.indexEntryStore) << " seqs)\n";
+    }
+
     // Open output file.
-    std::cerr << "\nOutput File           " << options.outputFilename << " ...";
+    std::cerr << "Output File             " << options.outputFilename << " ...";
     seqan::SequenceStream outStream;
     open(outStream, toCString(options.outputFilename), seqan::SequenceStream::WRITE, seqan::SequenceStream::FASTA);
     if (!isGood(outStream))
     {
         std::cerr << "\nERROR: Could not open output file " << options.outputFilename << "\n";
+        return 1;
+    }
+    std::cerr << " OK\n";
+
+    std::cerr << "Loading levels ...";
+    if (genome.loadMethLevels(lvlFaiIndex) != 0)
+    {
+        std::cerr << " ERROR\n";
         return 1;
     }
     std::cerr << " OK\n";

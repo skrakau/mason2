@@ -39,6 +39,8 @@
 // biases for PCR or fragment selection.
 // ==========================================================================
 
+// TODO(holtgrew): We should not load the whole genome into memory, especially bad if we have multiple haplotypes and methylation levels.
+
 #ifndef SANDBOX_MASON2_APPS_MASON2_FRAGMENT_GENERATION_H_
 #define SANDBOX_MASON2_APPS_MASON2_FRAGMENT_GENERATION_H_
 
@@ -114,10 +116,63 @@ public:
     seqan::StringSet<seqan::CharString> ids;
     seqan::StringSet<seqan::Dna5String> seqs;
 
+    // Forward and reverse methylation levels.
+    seqan::StringSet<seqan::CharString> fwdMethLevels, revMethLevels;
+
     void trimIds()
     {
         for (unsigned i = 0; i < length(ids); ++i)
             trimAfterSpace(ids[i]);
+    }
+
+    // Returns methylation level in [0.0, 1.0] for given reference at given position on forward/reverse strand.
+    float levelAt(int rId, int pos, bool reverse)
+    {
+        char c = '\0';
+        if (reverse)
+            c = revMethLevels[rId][pos] - '!';
+        else
+            c = fwdMethLevels[rId][pos] - '!';
+        SEQAN_ASSERT_NEQ(c, '>');
+        if (c > '>')
+            --c;
+        return (c - '!') / 80.0 * 1.25;
+    }
+
+    int loadMethLevels(seqan::FaiIndex const & faiIndex)
+    {
+        resize(fwdMethLevels, length(ids));
+        resize(revMethLevels, length(ids));
+        
+        for (unsigned i = 0; i < length(ids); ++i)
+        {
+            seqan::CharString topId = ids[i];
+            append(topId, "/TOP");
+            unsigned idx = 0;
+            if (!getIdByName(faiIndex, topId, idx))
+            {
+                std::cerr << "ERROR: Methylation levels \"" << topId << "\" not found for " << ids[i] << "\n";
+                return 1;
+            }
+            if (readSequence(fwdMethLevels[i], faiIndex, idx) != 0)
+            {
+                std::cerr << "ERROR: Problem reading \"" << topId << "\"\n";
+                return 1;
+            }
+
+            seqan::CharString bottomId = ids[i];
+            append(bottomId, "/BOT");
+            if (!getIdByName(faiIndex, bottomId, idx))
+            {
+                std::cerr << "ERROR: Methylation levels \"" << bottomId << "\" not found for " << ids[i] << "\n";
+                return 1;
+            }
+            if (readSequence(revMethLevels[i], faiIndex, idx) != 0)
+            {
+                std::cerr << "ERROR: Problem reading \"" << bottomId << "\"\n";
+                return 1;
+            }
+        }
     }
 };
 
