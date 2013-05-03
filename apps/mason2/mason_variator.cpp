@@ -851,6 +851,10 @@ public:
                 pos = back(variants.svRecords).targetPos + 1;
             }
 
+            SEQAN_ASSERT_LT(back(variants.svRecords).pos, (int)length(seq));
+            if (back(variants.svRecords).targetPos != -1)
+                SEQAN_ASSERT_LT(back(variants.svRecords).targetPos, (int)length(seq));
+
             if (options.verbosity >= 3)
                 std::cerr << back(variants.svRecords) << "\n";
         }
@@ -1379,6 +1383,11 @@ public:
     {
         if (options.verbosity >= 2)
             std::cerr << "\nMATERIALIZING LARGE VARIANTS FOR HAPLOTYPE " << hId << "\n\n";
+        // Clear output methylation levels.
+        levelsLargeVariants.clear();
+        // Store variation points.  We reuse the _fixVariationLevels() function from small indel/snp simulation and thus
+        // have to store a bool that is always set to false.
+        seqan::String<std::pair<int, bool> > varPoints;
         
         // Track last position from contig appended to seq so far.
         int lastPos = 0;
@@ -1399,8 +1408,9 @@ public:
             if (options.verbosity >= 2)
                 std::cerr << "  Translating SvRecord\n  " << svRecord << '\n';
             svRecord.pos = hostToVirtualPosition(journal, svRecord.pos);
+            SEQAN_ASSERT_LT(svRecord.pos, (int)length(contig));
             // We do not need to adjust the sizes for insertions.
-            if (svRecord.kind != StructuralVariantRecord::INDEL && svRecord.size < 0)
+            if (svRecord.kind != StructuralVariantRecord::INDEL || svRecord.size < 0)
                 svRecord.size = hostToVirtualPosition(journal, svRecord.pos + svRecord.size) -
                         hostToVirtualPosition(journal, svRecord.pos);
             if (svRecord.targetPos != -1)
@@ -1409,7 +1419,15 @@ public:
                 std::cerr << "  => " << svRecord << '\n';
 
             // Copy from contig to seq with SVs.
+            if (options.verbosity >= 3)
+                std::cerr << "lastPos == " << lastPos << "\n";
             append(seq, infix(contig, lastPos, svRecord.pos));  // interim chars
+            if (options.simulateMethylationLevels)
+            {
+                append(levelsLargeVariants.forward, infix(levels.forward, lastPos, svRecord.pos));
+                append(levelsLargeVariants.reverse, infix(levels.reverse, lastPos, svRecord.pos));
+                appendValue(varPoints, std::make_pair(length(seq), false));
+            }
             currentPos = length(seq);
             if (options.verbosity >= 3)
                 std::cerr << "append(seq, infix(contig, " << lastPos << ", " << svRecord.pos << ") " << __LINE__ << " (interim)\n";
@@ -1420,11 +1438,27 @@ public:
                         if (svRecord.size > 0)  // insertion
                         {
                             SEQAN_ASSERT_EQ((int)length(svRecord.seq), svRecord.size);
-                                    
+
+                            // Simulate methylation levels for insertion.
+                            MethylationLevels lvls;
+                            if (options.simulateMethylationLevels)
+                            {
+                                MethylationLevelSimulator methSim(rng, options);
+                                methSim.run(lvls, svRecord.seq);
+                            }
+
+                            // Append novel sequence and methylation levels.
                             append(seq, svRecord.seq);
+                            if (options.simulateMethylationLevels)
+                            {
+                                append(levelsLargeVariants.forward, lvls.forward);
+                                append(levelsLargeVariants.reverse, lvls.reverse);
+                                appendValue(varPoints, std::make_pair(length(seq), false));  // variation point after insertion
+                            }
                             if (options.verbosity >= 3)
                                 std::cerr << "append(seq, svRecord.seq (length == " << length(svRecord.seq) << ") " << __LINE__ << " (insertion)\n";
                             lastPos = svRecord.pos;
+                            SEQAN_ASSERT_LT(lastPos, (int)length(contig));
 
                             if (!empty(options.outputBreakpointFile))  // write out breakpoints
                                 breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
@@ -1434,6 +1468,7 @@ public:
                         else  // deletion
                         {
                             lastPos = svRecord.pos - svRecord.size;
+                            SEQAN_ASSERT_LT(lastPos, (int)length(contig));
 
                             if (!empty(options.outputBreakpointFile))  // write out breakpoint
                                 breakpointsOut << ref << "\t" << currentPos << "\n";
@@ -1444,10 +1479,20 @@ public:
                     {
                         unsigned oldLen = length(seq);
                         append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));  // variation point at deletion
+                            append(levelsLargeVariants.forward, infix(levels.reverse, svRecord.pos, svRecord.pos + svRecord.size));
+                            reverse(infix(levelsLargeVariants.forward, oldLen, length(levelsLargeVariants.forward)));
+                            append(levelsLargeVariants.reverse, infix(levels.forward, svRecord.pos, svRecord.pos + svRecord.size));
+                            reverse(infix(levelsLargeVariants.reverse, oldLen, length(levelsLargeVariants.reverse)));
+                        }
+
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (inversion)\n";
                         reverseComplement(infix(seq, oldLen, length(seq)));
                         lastPos = svRecord.pos + svRecord.size;
+                        SEQAN_ASSERT_LT(lastPos, (int)length(contig));
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
                             breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
@@ -1459,11 +1504,24 @@ public:
                     {
                         SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
                         append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));
+                            append(levelsLargeVariants.forward, infix(levels.forward, svRecord.pos + svRecord.size, svRecord.targetPos));
+                            append(levelsLargeVariants.reverse, infix(levels.reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        }
                         append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));
+                            append(levelsLargeVariants.forward, infix(levels.forward, svRecord.pos, svRecord.pos + svRecord.size));
+                            append(levelsLargeVariants.reverse, infix(levels.reverse, svRecord.pos, svRecord.pos + svRecord.size));
+                        }
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << " (translocation)\n"
                                       << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
                         lastPos = svRecord.targetPos;
+                        SEQAN_ASSERT_LT(lastPos, (int)length(contig));
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
                             breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
@@ -1476,13 +1534,32 @@ public:
                     {
                         append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
                         SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));
+                            append(levelsLargeVariants.forward, infix(levels.forward, svRecord.pos, svRecord.pos + svRecord.size));
+                            append(levelsLargeVariants.reverse, infix(levels.reverse, svRecord.pos, svRecord.pos + svRecord.size));
+                        }
                         append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));
+                            append(levelsLargeVariants.forward, infix(levels.forward, svRecord.pos + svRecord.size, svRecord.targetPos));
+                            append(levelsLargeVariants.reverse, infix(levels.reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
+                        }
                         append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
+                        if (options.simulateMethylationLevels)
+                        {
+                            appendValue(varPoints, std::make_pair(length(seq), false));
+                            append(levelsLargeVariants.forward, infix(levels.forward, svRecord.pos, svRecord.pos + svRecord.size));
+                            append(levelsLargeVariants.reverse, infix(levels.reverse, svRecord.pos, svRecord.pos + svRecord.size));
+                        }
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (duplication)\n"
                                       << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
                                       << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
                         lastPos = svRecord.targetPos;
+                        SEQAN_ASSERT_LT(lastPos, (int)length(contig));
 
                         if (!empty(options.outputBreakpointFile))  // write out breakpoint
                             breakpointsOut << ref << "\t" << (currentPos + 1) << "\n"
@@ -1501,6 +1578,16 @@ public:
             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ") "
                       << __LINE__ << " (last interim)\n";
         append(seq, infix(contig, lastPos, length(contig)));
+        if (options.simulateMethylationLevels)
+        {
+            append(levelsLargeVariants.forward, infix(levels.forward, lastPos, length(contig)));
+            append(levelsLargeVariants.reverse, infix(levels.reverse, lastPos, length(contig)));
+
+            SEQAN_ASSERT_EQ(length(seq), length(levelsLargeVariants.forward));
+            SEQAN_ASSERT_EQ(length(seq), length(levelsLargeVariants.reverse));
+
+            _fixVariationLevels(levelsLargeVariants, seq, varPoints);
+        }
         
         return 0;
     }
@@ -1515,7 +1602,7 @@ public:
                                   int /*rId*/,
                                   int hId)
     {
-        // Clear journal and output methylation variable.
+        // Clear journal and output methylation levels.
         reinit(journal, length(contig));
         levelsSmallVariants.clear();
         // Store variation points with a flag whether it is a SNP (true) or a breakpoint (false).
@@ -1620,7 +1707,7 @@ public:
                         if (options.verbosity >= 3)
                             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
                     }
-                    else
+                    else  // deletion
                     {
                         if (options.verbosity >= 3)
                             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << smallIndelRecord.pos << ") " << __LINE__ << "\n";
@@ -1634,6 +1721,9 @@ public:
                         }
 
                         lastPos = smallIndelRecord.pos - smallIndelRecord.size;
+                        recordErase(journal,
+                                    hostToVirtualPosition(journal, smallIndelRecord.pos),
+                                    hostToVirtualPosition(journal, smallIndelRecord.pos - smallIndelRecord.size));
                         if (options.verbosity >= 3)
                             std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
                     }
@@ -1660,8 +1750,6 @@ public:
 
             _fixVariationLevels(levelsSmallVariants, seq, varPoints);
         }
-
-        // TODO(holtgrew): Adjust methylation levels around points.
 
         return 0;
     }
