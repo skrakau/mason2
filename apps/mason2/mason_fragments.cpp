@@ -455,6 +455,11 @@ int main(int argc, char const ** argv)
     fragOptions.stdDevFragmentSize = options.stdDevFragmentSize;
     fragOptions.embedSamplingInfo = options.embedSamplingInfo;
 
+    fragOptions.bsSimEnabled = options.bsSimEnabled;
+    fragOptions.bsConversionRate = options.bsConversionRate;
+    fragOptions.bsProtocol = (options.bsProtocol == MasonFragmentsOptions::DIRECTIONAL) ?
+            FragmentOptions::DIRECTIONAL : FragmentOptions::UNDIRECTIONAL;
+
     FragmentSimulator fragSim(rng, outStream, genome, fragOptions);
 
     std::cerr << "Simulating Fragments ...";

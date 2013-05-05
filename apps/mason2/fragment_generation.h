@@ -81,6 +81,13 @@ struct FragmentOptions
         NORMAL
     };
 
+    // The BS simulation type to use.
+    enum BSProtocol
+    {
+        DIRECTIONAL,
+        UNDIRECTIONAL
+    };
+
     // Number of fragments to generate.
     int numFragments;
     // Whether or not to embed sampling information in id.
@@ -98,9 +105,16 @@ struct FragmentOptions
     // The model to use for the fragment size.
     FragmentSizeModel model;
 
+    // Wether or not to simulate BS-seq.
+    bool bsSimEnabled;
+    // The rate that unmethylated Cs to become Ts.
+    double bsConversionRate;
+    // The protocol to use for the simulation.
+    BSProtocol bsProtocol;
+
     FragmentOptions() :
             numFragments(0), embedSamplingInfo(false), minFragmentSize(0), maxFragmentSize(0), meanFragmentSize(0),
-            stdDevFragmentSize(0), model(UNIFORM)
+            stdDevFragmentSize(0), model(UNIFORM), bsSimEnabled(false), bsConversionRate(0), bsProtocol(DIRECTIONAL)
     {}
 };
 
@@ -126,13 +140,13 @@ public:
     }
 
     // Returns methylation level in [0.0, 1.0] for given reference at given position on forward/reverse strand.
-    float levelAt(int rId, int pos, bool reverse)
+    float levelAt(int rId, int pos, bool reverse) const
     {
         char c = '\0';
         if (reverse)
-            c = revMethLevels[rId][pos] - '!';
+            c = revMethLevels[rId][pos];
         else
-            c = fwdMethLevels[rId][pos] - '!';
+            c = fwdMethLevels[rId][pos];
         SEQAN_ASSERT_NEQ(c, '>');
         if (c > '>')
             --c;
@@ -291,6 +305,9 @@ public:
 class FragmentSimulator
 {
 public:
+    // The type to use for storing parts of Genome::seqs.
+    typedef seqan::Value<seqan::StringSet<seqan::CharString> >::Type TGenomeSeq;
+
     // The random number generator.
     TRng & rng;
     // The SequenceStream to write the resulting fragment sequences to.
@@ -343,13 +360,59 @@ public:
             if (fragOptions.embedSamplingInfo)
                 ss << " REF=" << genome.ids[rId] << " BEGIN=" << frag.beginPos << " END=" << frag.endPos;
 
+            seqan::Pdf<seqan::Uniform<int> > pdfCoin(0, 1);
+            bool reverse = pickRandomNumber(rng, pdfCoin);
+            if (reverse)
+                ss << " STRAND=FWD";
+            else
+                ss << " STRAND=REV";
+
+            // Get fragment from forward/reverse strand.
+            TGenomeSeq fragSeq = infix(genome.seqs[frag.rId], frag.beginPos, frag.endPos);
+
+            // In case of BS-Seq, compute result of BS treatment now.
+            if (fragOptions.bsSimEnabled)
+                _simulateBSTreatment(fragSeq, frag, reverse);
+
+            // Write out resulting sequence after reverse-complementation.
+            if (reverse)
+                reverseComplement(fragSeq);
+
             seqan::SequenceOutputOptions outOptions(0);
-            writeRecord(outputStream, ss.str(), infix(genome.seqs[frag.rId], frag.beginPos, frag.endPos), outOptions);
+            // TODO(holtgrew): Check return value?
+            writeRecord(outputStream, ss.str(), fragSeq, outOptions);
         }
 
         return;
     }
 
+    // Simulate bisulphite treatment of the given sequence with the location information given by the fragment.
+    void _simulateBSTreatment(TGenomeSeq & fragSeq, Fragment const & frag, bool reverse)
+    {
+        for (int pos = 0; pos != frag.endPos - frag.beginPos; ++pos)
+        {
+            if ((!reverse && fragSeq[pos] != 'C') || (reverse && fragSeq[pos] != 'G'))  // Skip all non-cyteline chars
+            {
+                SEQAN_ASSERT_EQ_MSG(genome.levelAt(frag.rId, pos + frag.beginPos, reverse), 0.0,
+                                    "Methylation for non-C should be 0 (frag.rId=%d, pos+frag.beginPos=%d, reverse=%d",
+                                    frag.rId, pos + frag.beginPos, reverse);
+                continue;
+            }
+
+            // Decide whether fragSeq[pos] is methylated.  If this is the case then we leave it untouched.
+            seqan::Pdf<seqan::Uniform<double> > pdf(0, 1);
+            if (pickRandomNumber(rng, pdf) < genome.levelAt(frag.rId, pos + frag.beginPos, reverse))
+                continue;
+
+            // Otherwise, pick whether we will convert.
+            if (pickRandomNumber(rng, pdf) < fragOptions.bsConversionRate)
+                fragSeq[pos] = reverse ? 'A' : 'T';
+        }
+    }
+
+    // Pick the contig to simulate the fragment from.
+    //
+    // The contig is picked in relation to their length.
     int _pickContig()
     {
         if (length(lengthSums) == 1u)
