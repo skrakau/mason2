@@ -41,7 +41,6 @@
 // TODO(holtgrew): Allow inversion in translocation.
 // TODO(holtgrew): Add support for parsing VCF.
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
-// TODO(holtgrew): Methylation simulation for bottom seems weird.
 
 #include <seqan/arg_parse.h>
 #include <seqan/random.h>
@@ -253,7 +252,7 @@ struct MethylationLevels
         // std::cerr << "forward[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
         char c = levelToChar(round(level / 0.0125));
         SEQAN_ASSERT_NEQ((int)c, (int)'>');
-        forward[i] = c;
+        forward[i] = std::max(reverse[i], c);
     }
 
     // Returns methylation level for reverse strand at position i.
@@ -262,15 +261,15 @@ struct MethylationLevels
         return (charToLevel(reverse[i]) / 80.0) / 0.0125;
     }
 
-    // Sets methylation level for reverse strand at position i.
+    // Sets methylation level for reverse strand at position i if level is larger than current.
     inline void setLevelR(unsigned i, float level)
     {
         SEQAN_ASSERT_GEQ(level, 0.0);
         SEQAN_ASSERT_LEQ(level, 1.0);
-        // std::cerr << "reverse[i] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
+        // std::cerr << "reverse[" << i << "] = " << levelToChar(round(level / 0.0125)) << " ~ " << (level / 0.0125) << " ~ " << level << "\n";
         char c = levelToChar(round(level / 0.0125));
         SEQAN_ASSERT_NEQ((int)c, (int)'>');
-        reverse[i] = c;
+        reverse[i] = std::max(reverse[i], c);
     }
 };
 
@@ -312,17 +311,23 @@ public:
         // We will go over the contig with hashes to search for patterns efficiently.
         seqan::Shape<seqan::Dna5> shape2, shape3;
         handleOneMer(levels, 0, ordValue(contig[0]));
+        if (levels.forward[0] != '!') SEQAN_ASSERT_EQ(contig[0], 'C');
+        if (levels.reverse[0] != '!') SEQAN_ASSERT_EQ(contig[0], 'G');
         if (length(contig) >= 2u)
         {
             resize(shape2, 2);
             hash(shape2, it);
             handleTwoMer(levels, 0, value(shape2));
+            if (levels.forward[1] != '!') SEQAN_ASSERT_EQ(contig[1], 'C');
+            if (levels.reverse[1] != '!') SEQAN_ASSERT_EQ(contig[1], 'G');
         }
         if (length(contig) >= 3u)
         {
             resize(shape3, 3);
             hash(shape3, it);
             handleThreeMer(levels, 0, value(shape3));
+            if (levels.forward[2] != '!') SEQAN_ASSERT_EQ(contig[2], 'C');
+            if (levels.reverse[2] != '!') SEQAN_ASSERT_EQ(contig[2], 'G');
         }
         ++it;
         unsigned pos = 1;
@@ -333,6 +338,8 @@ public:
             handleOneMer(levels, pos, *it);
             handleTwoMer(levels, pos, value(shape2));
             handleThreeMer(levels, pos, value(shape3));
+            if (levels.forward[pos] != '!') SEQAN_ASSERT_EQ(contig[pos], 'C');
+            if (levels.reverse[pos] != '!') SEQAN_ASSERT_EQ(contig[pos], 'G');
         }
         if (pos < length(contig))
             handleOneMer(levels, pos, ordValue(*it));
@@ -348,11 +355,14 @@ public:
     // Handle 3mer, forward case.
     void handleThreeMer(MethylationLevels & levels, unsigned pos, unsigned hashValue)
     {
+        // seqan::Dna5String dbg;
+        // unhash(dbg, hashValue, 3);
         switch (hashValue)
         {
             case 27:  // CHG, symmetric
             case 32:
             case 42:
+                // std::cerr << "CHG       \t" << dbg << "\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHG));
                 levels.setLevelR(pos + 2, pickRandomNumber(rng, pdfCHG));
                 break;
@@ -365,6 +375,7 @@ public:
             case 40:
             case 41:
             case 43:
+                // std::cerr << "CHH       \t" << dbg << "\n";
                 levels.setLevelF(pos, pickRandomNumber(rng, pdfCHH));
                 break;
             case 2:  // rc(CHH)
@@ -376,7 +387,8 @@ public:
             case 77:
             case 87:
             case 92:
-                levels.setLevelF(pos + 2, pickRandomNumber(rng, pdfCHH));
+                // std::cerr << "rc(CHH)   \t" << dbg << "\n";
+                levels.setLevelR(pos + 2, pickRandomNumber(rng, pdfCHH));
                 break;
             default:
                 // nop
@@ -389,6 +401,9 @@ public:
     {
         if (hashValue == 7)  // CpG forward (symmetric, also reverse)
         {
+            // seqan::Dna5String dbg;
+            // unhash(dbg, hashValue, 2);
+            // std::cerr << "CpG     \t" << dbg << "\n";
             levels.setLevelF(pos, pickRandomNumber(rng, pdfCG));
             levels.setLevelR(pos + 1, pickRandomNumber(rng, pdfCG));
         }
@@ -397,6 +412,9 @@ public:
     // Handle 1mer.
     void handleOneMer(MethylationLevels & levels, unsigned pos, unsigned val)
     {
+        // if (val == 1 || val == 2)
+        //     std::cerr << "C/G     \t" << seqan::Dna5(val) << "\n";
+
         if (val == 1)   // C forward
             levels.setLevelF(pos, pickRandomNumber(rng, pdfC));
         else if (val == 2)  // C reverse (G)
