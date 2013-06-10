@@ -35,7 +35,10 @@ add_definitions (${SEQAN_DEFINITIONS})
 
 # Update the list of file names below if you add source files to your application.
 add_executable (mason_genome mason_genome.cpp simulate_genome.h)
-add_executable (mason_fragments mason_fragments.cpp fragment_generation.h)
+add_executable (mason_fragments
+                mason_fragments.cpp
+                fragment_generation.h
+                external_split_merge.h)
 add_executable (mason_sequencing
                 sequencing.h
                 mason_sequencing.cpp

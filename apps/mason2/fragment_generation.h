@@ -51,8 +51,10 @@
 
 #include <seqan/random.h>
 #include <seqan/sequence.h>
+#include <seqan/seq_io.h>
 
 #include "fstream_temp.h"
+#include "external_split_merge.h"
 
 // ============================================================================
 // Forwards
@@ -164,13 +166,13 @@ public:
         {
             if (_readMethLevels(fwdMethLevels, "/TOP") != 0)
                 return 1;
-            if (_readMethLevels(revMethLevels, "/BOTTOM") != 0)
+            if (_readMethLevels(revMethLevels, "/BOT") != 0)
                 return 1;
         }
         return 0;
     }
 
-    // Load methylation levels (/TOP or /BOTTOM) into lvls.
+    // Load methylation levels (/TOP or /BOT) into lvls.
     int _readMethLevels(seqan::CharString & lvls, char const * suffix)
     {
         // Load methylation levels.
@@ -327,8 +329,8 @@ public:
     TRng & rng;
     // The SequenceStream to write the resulting fragment sequences to.
     seqan::SequenceStream & outputStream;
-    // The genome to sequence from;
-    Genome const & genome;
+    // The genome to access sequence with.
+    Genome & genome;
     // Simulation options for FragmentGenerator.
     FragmentOptions fragOptions;
 
@@ -339,13 +341,13 @@ public:
 
     FragmentSimulator(TRng & rng,
                       seqan::SequenceStream & outStream,
-                      Genome const & genome,
+                      Genome & genome,
                       FragmentOptions const & fragOptions) :
             rng(rng), outputStream(outStream), genome(genome), fragOptions(fragOptions),
             fragGenerator(rng, fragOptions)
     {
         // Build the partial sums.
-        resize(lengthSums, numSeqs(genome.seqFaiIndex), 0);
+        clear(lengthSums);
         for (unsigned i = 0; i < numSeqs(genome.seqFaiIndex); ++i)
         {
             appendValue(lengthSums, sequenceLength(genome.seqFaiIndex, i));
@@ -355,51 +357,7 @@ public:
     }
 
     // Simulate the fragments.
-    void simulate()
-    {
-        /*
-        seqan::CharString id;
-        seqan::Dna5String contig, seq;
-
-        std::stringstream ss;
-
-        for (int i = 0; i < fragOptions.numFragments; ++i)
-        {
-            ss.str("");
-            ss.clear();
-            ss << (i + 1);
-
-            Fragment frag;
-            int rId = _pickContig();
-            fragGenerator.generate(frag, rId, length(genome.seqs[rId]));
-
-            if (fragOptions.embedSamplingInfo)
-                ss << " REF=" << genome.ids[rId] << " BEGIN=" << frag.beginPos << " END=" << frag.endPos;
-
-            seqan::Pdf<seqan::Uniform<int> > pdfCoin(0, 1);
-            bool reverse = pickRandomNumber(rng, pdfCoin);
-            if (reverse)
-                ss << " STRAND=FWD";
-            else
-                ss << " STRAND=REV";
-
-            // Get fragment from forward/reverse strand.
-            TGenomeSeq fragSeq = infix(genome.seqs[frag.rId], frag.beginPos, frag.endPos);
-
-            // In case of BS-Seq, compute result of BS treatment now.
-            if (fragOptions.bsSimEnabled)
-                _simulateBSTreatment(fragSeq, frag, reverse);
-
-            // Write out resulting sequence after reverse-complementation.
-            if (reverse)
-                reverseComplement(fragSeq);
-
-            seqan::SequenceOutputOptions outOptions(0);
-            // TODO(holtgrew): Check return value?
-            writeRecord(outputStream, ss.str(), fragSeq, outOptions);
-        }
-        */
-    }
+    void simulate();
 
     // Simulate bisulphite treatment of the given sequence with the location information given by the fragment.
     void _simulateBSTreatment(TGenomeSeq & fragSeq, Fragment const & frag, bool reverse)
@@ -432,14 +390,14 @@ public:
     {
         if (length(lengthSums) == 1u)
             return 0;
-        seqan::Pdf<seqan::Uniform<int> > pdf(0, length(lengthSums) - 1);
+        seqan::Pdf<seqan::Uniform<int> > pdf(0, back(lengthSums) - 1);
         int result = 0;
         int x = pickRandomNumber(rng, pdf);
         for (unsigned i = 0; i < length(lengthSums); ++i)
         {
-            if (x < lengthSums[i])
-                result = i;
             if (x >= lengthSums[i])
+                result = i + 1;
+            if (x < lengthSums[i])
                 break;
         }
         return result;
@@ -453,6 +411,125 @@ public:
 // ============================================================================
 // Functions
 // ============================================================================
+
+void FragmentSimulator::simulate()
+{
+    // ------------------------------------------------------------------------
+    // (1) Distribute Fragments to Contigs (ids only).
+    // ------------------------------------------------------------------------
+
+    // Distributing of ids to per-contig files.
+    IdSplitter idSplitter(numSeqs(genome.seqFaiIndex));
+    idSplitter.open();
+
+    for (int fragID = 0; fragID < fragOptions.numFragments; ++fragID)
+    {
+        int contigID = _pickContig();
+        if (fwrite(&fragID, 1, sizeof(int), idSplitter.files[contigID]) != sizeof(int))
+        {
+            std::cerr << "ERROR: Problem writing fragment id in first step for splitting.\n";
+            exit(1);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // (2) Perform Simulation for Each Contig.
+    // ------------------------------------------------------------------------
+
+    idSplitter.reset();
+
+    // Collect the fragments in a per-contig file.
+    IdSplitter fragSplitter(numSeqs(genome.seqFaiIndex));
+    fragSplitter.open();
+
+    // String stream for building fragment ids.
+    std::stringstream ss;
+
+    // We read chunk-wise from the id file.
+    unsigned const CHUNK_SIZE = 4096;
+    std::vector<int> fragIDs;
+    for (unsigned contigID = 0; contigID < numSeqs(genome.seqFaiIndex); ++contigID)
+    {
+        if (genome.loadContig(contigID) != 0)
+        {
+            std::cerr << "ERROR: Could not switch to contig " << contigID << "\n";
+            exit(1);
+        }
+        
+        fragIDs.resize(CHUNK_SIZE);
+        while (!feof(idSplitter.files[contigID]))
+        {
+            unsigned numRead = fread(&fragIDs[0], sizeof(int), CHUNK_SIZE, idSplitter.files[contigID]);
+            fragIDs.resize(numRead);
+            for (std::vector<int>::const_iterator it = fragIDs.begin(); it != fragIDs.end(); ++it)
+            {
+                // Reset string stream and start with id.
+                ss.str("");
+                ss.clear();
+                ss << (*it + 1);
+
+                Fragment frag;
+                fragGenerator.generate(frag, contigID, length(genome.seq));
+
+                if (fragOptions.embedSamplingInfo)
+                    ss << " REF=" << genome.id << " BEGIN=" << frag.beginPos
+                       << " END=" << frag.endPos;
+
+                seqan::Pdf<seqan::Uniform<int> > pdfCoin(0, 1);
+                bool reverse = pickRandomNumber(rng, pdfCoin);
+                if (fragOptions.embedSamplingInfo)
+                {
+                    if (reverse)
+                        ss << " STRAND=FWD";
+                    else
+                        ss << " STRAND=REV";
+                }
+                
+                // Get fragment from forward/reverse strand.
+                TGenomeSeq fragSeq = infix(genome.seq, frag.beginPos, frag.endPos);
+                
+                // In case of BS-Seq, compute result of BS treatment now.
+                if (fragOptions.bsSimEnabled)
+                    _simulateBSTreatment(fragSeq, frag, reverse);
+                
+                // Write out resulting sequence after reverse-complementation.
+                if (reverse)
+                    reverseComplement(fragSeq);
+                
+                // TODO(holtgrew): Check return value?
+                seqan::SequenceOutputOptions outOptions(0);
+                writeRecord(fragSplitter.files[contigID], ss.str(), fragSeq, seqan::Fasta(), outOptions);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // (2) Join Fragments on Names (up to first whitespace).
+    // ------------------------------------------------------------------------
+
+    fragSplitter.reset();
+
+    // Buffer for ID and sequence to load data into.
+    seqan::CharString id, seq;
+
+    // Join the split FASTA data by id.
+    FastaJoiner fragJoiner(fragSplitter);
+    while (!fragJoiner.atEnd())
+    {
+        if (fragJoiner.get(id, seq) != 0)
+        {
+            std::cerr << "ERROR: Problem when joining.\n";
+            exit(1);
+        }
+
+        seqan::SequenceOutputOptions outOptions(0);
+        if (writeRecord(outputStream, id, seq, outOptions) != 0)
+        {
+            std::cerr << "ERROR: Problem when writing.\n";
+            exit(1);
+        }
+    }
+}
 
 // --------------------------------------------------------------------------
 // Function trimAfterSpace()
@@ -475,9 +552,9 @@ void trimAfterSpace(seqan::CharString & s)
 
 void UniformFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned contigLength)
 {
-    // TODO(holtgrew): Test whether there are too many tries.
     int fragLength = 0;
-    while (true)
+    unsigned const MAX_TRIES = 1000;
+    for (unsigned tryNo = 0; tryNo < MAX_TRIES; ++tryNo)
     {
         fragLength = pickRandomNumber(rng, pdf);
         if (fragLength <= 0 || fragLength > (int)contigLength)
@@ -496,9 +573,9 @@ void UniformFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned c
 
 void NormalFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned contigLength)
 {
-    // TODO(holtgrew): Test whether there are too many tries.
     int fragLength = 0;
-    while (true)
+    unsigned const MAX_TRIES = 1000;
+    for (unsigned tryNo = 0; tryNo < MAX_TRIES; ++tryNo)
     {
         fragLength = pickRandomNumber(rng, pdf);
         if (fragLength <= 0 || fragLength > (int)contigLength)
