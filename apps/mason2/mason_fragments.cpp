@@ -34,6 +34,8 @@
 // Given a genome, simulate fragments.
 // ==========================================================================
 
+// TODO(holtgrew): Make methylation levels optional.
+
 #include <seqan/basic.h>
 #include <seqan/sequence.h>
 #include <seqan/seq_io.h>
@@ -372,52 +374,64 @@ int main(int argc, char const ** argv)
     std::cerr << "__PREPARATION________________________________________________________________\n"
               << "\n";
 
-    // Open reference FAI index.
-    std::cerr << "Loading reference       " << options.inputFilename << " ...";
-    seqan::SequenceStream inGenome(toCString(options.inputFilename));
-    if (!isGood(inGenome))
-    {
-        std::cerr << " ERROR\n"
-                  << "Could not open " << options.inputFilename << "\n";
-        return 1;
-    }
+    // The Genome allows loading of all information for a contig, one contig at a time.
+    Genome genome(options.bsSimEnabled);
 
-    Genome genome;
-    if (readAll(genome.ids, genome.seqs, inGenome))
-    {
-        std::cerr << " ERROR\n"
-                  << "Could not load genome.\n";
-        return 1;
-    }
-    genome.trimIds();
-    std::cerr << " OK\n";
-
-    // Loading methylation levels.
-    std::cerr << "Loading Meth. Level FAI " << options.methLevelsInFasta << " ...";
-    seqan::FaiIndex lvlFaiIndex;
-    if (read(lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+    // Loading sequence FAI Index.
+    std::cerr << "Loading Sequence        " << options.inputFilename << " ...";
+    if (read(genome.seqFaiIndex, toCString(options.inputFilename)) != 0)
     {
         std::cerr << " FAILED (not fatal, we can just build it)\n";
-        std::cerr << "Building FAI          " << options.methLevelsInFasta << ".fai ...";
-        if (build(lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+        std::cerr << "Building FAI          " << options.inputFilename << ".fai ...";
+        if (build(genome.seqFaiIndex, toCString(options.inputFilename)) != 0)
         {
             std::cerr << "Could not build FAI index.\n";
             return 1;
         }
         std::cerr << " OK\n";
-        seqan::CharString faiPath = options.methLevelsInFasta;
+        seqan::CharString faiPath = options.inputFilename;
         append(faiPath, ".fai");
         std::cerr << "Reference Index       " << faiPath << " ...";
-        if (write(lvlFaiIndex, toCString(faiPath)) != 0)
+        if (write(genome.seqFaiIndex, toCString(faiPath)) != 0)
         {
             std::cerr << "Could not write FAI index we just built.\n";
             return 1;
         }
-        std::cerr << " OK (" << length(lvlFaiIndex.indexEntryStore) << " seqs)\n";
+        std::cerr << " OK (" << numSeqs(genome.seqFaiIndex) << " seqs)\n";
     }
     else
     {
-        std::cerr << " OK (" << length(lvlFaiIndex.indexEntryStore) << " seqs)\n";
+        std::cerr << " OK (" << numSeqs(genome.seqFaiIndex) << " seqs)\n";
+    }
+
+    // Loading methylation levels.
+    if (options.bsSimEnabled)
+    {
+        std::cerr << "Loading Meth. Level FAI " << options.methLevelsInFasta << " ...";
+        if (read(genome.lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+        {
+            std::cerr << " FAILED (not fatal, we can just build it)\n";
+            std::cerr << "Building FAI          " << options.methLevelsInFasta << ".fai ...";
+            if (build(genome.lvlFaiIndex, toCString(options.methLevelsInFasta)) != 0)
+            {
+                std::cerr << "Could not build FAI index.\n";
+                return 1;
+            }
+            std::cerr << " OK\n";
+            seqan::CharString faiPath = options.methLevelsInFasta;
+            append(faiPath, ".fai");
+            std::cerr << "Reference Index       " << faiPath << " ...";
+            if (write(genome.lvlFaiIndex, toCString(faiPath)) != 0)
+            {
+                std::cerr << "Could not write FAI index we just built.\n";
+                return 1;
+            }
+            std::cerr << " OK (" << length(genome.lvlFaiIndex) << " seqs)\n";
+        }
+        else
+        {
+            std::cerr << " OK (" << length(genome.lvlFaiIndex) << " seqs)\n";
+        }
     }
 
     // Open output file.
@@ -427,14 +441,6 @@ int main(int argc, char const ** argv)
     if (!isGood(outStream))
     {
         std::cerr << "\nERROR: Could not open output file " << options.outputFilename << "\n";
-        return 1;
-    }
-    std::cerr << " OK\n";
-
-    std::cerr << "Loading levels ...";
-    if (genome.loadMethLevels(lvlFaiIndex) != 0)
-    {
-        std::cerr << " ERROR\n";
         return 1;
     }
     std::cerr << " OK\n";

@@ -123,72 +123,85 @@ struct FragmentOptions
 // --------------------------------------------------------------------------
 
 // Container for genomic information.
+//
+// Allows the loading of all information for one contig at a time.
 
 class Genome
 {
 public:
-    seqan::StringSet<seqan::CharString> ids;
-    seqan::StringSet<seqan::Dna5String> seqs;
+    // FAI index for loading the sequences.
+    seqan::FaiIndex seqFaiIndex;
+    // FAI index for loading the methylation levels.
+    seqan::FaiIndex lvlFaiIndex;
 
-    // Forward and reverse methylation levels.
-    seqan::StringSet<seqan::CharString> fwdMethLevels, revMethLevels;
+    // ID of currently loaded contig.
+    unsigned rID;
+    // ID and sequence of currently loaded contig.
+    seqan::CharString id;
+    seqan::Dna5String seq;
 
-    void trimIds()
+    // Whether or not BS-Seq simulation is enabled or not.
+    bool bsSimEnabled;
+    // Forward and reverse strand methylation levels.
+    seqan::CharString fwdMethLevels, revMethLevels;
+
+    // Constructor.
+    Genome(bool bsSimEnabled) : rID(seqan::maxValue<unsigned>()), bsSimEnabled(bsSimEnabled)
+    {}
+
+    // Loads the given contig from the genome.
+    int loadContig(unsigned idx)
     {
-        for (unsigned i = 0; i < length(ids); ++i)
-            trimAfterSpace(ids[i]);
+        id = sequenceName(seqFaiIndex, idx);
+        trimAfterSpace(id);
+
+        // Load sequence.
+        if (readSequence(seq, seqFaiIndex, idx) != 0)
+            return 1;
+
+        // Load methylation levels if BS-Seq is enabled.
+        if (bsSimEnabled)
+        {
+            if (_readMethLevels(fwdMethLevels, "/TOP") != 0)
+                return 1;
+            if (_readMethLevels(revMethLevels, "/BOTTOM") != 0)
+                return 1;
+        }
+        return 0;
     }
 
-    // Returns methylation level in [0.0, 1.0] for given reference at given position on forward/reverse strand.
-    float levelAt(int rId, int pos, bool reverse) const
+    // Load methylation levels (/TOP or /BOTTOM) into lvls.
+    int _readMethLevels(seqan::CharString & lvls, char const * suffix)
+    {
+        // Load methylation levels.
+        seqan::CharString fullId = id;
+        append(fullId, suffix);
+        unsigned idx = 0;
+        if (!getIdByName(lvlFaiIndex, fullId, idx))
+        {
+            std::cerr << "ERROR: Methylation levels \"" << fullId << "\" not found for " << id << "\n";
+            return 1;
+        }
+        if (readSequence(lvls, lvlFaiIndex, idx) != 0)
+        {
+            std::cerr << "ERROR: Problem reading \"" << fullId << "\"\n";
+            return 1;
+        }
+        return 0;
+    }
+
+    // Returns methylation level in [0.0, 1.0] for current reference at given position on forward/reverse strand.
+    float levelAt(int pos, bool reverse) const
     {
         char c = '\0';
         if (reverse)
-            c = revMethLevels[rId][pos];
+            c = revMethLevels[pos];
         else
-            c = fwdMethLevels[rId][pos];
+            c = fwdMethLevels[pos];
         SEQAN_ASSERT_NEQ(c, '>');
         if (c > '>')
             --c;
         return (c - '!') / 80.0 * 1.25;
-    }
-
-    int loadMethLevels(seqan::FaiIndex const & faiIndex)
-    {
-        resize(fwdMethLevels, length(ids));
-        resize(revMethLevels, length(ids));
-        
-        for (unsigned i = 0; i < length(ids); ++i)
-        {
-            seqan::CharString topId = ids[i];
-            append(topId, "/TOP");
-            unsigned idx = 0;
-            if (!getIdByName(faiIndex, topId, idx))
-            {
-                std::cerr << "ERROR: Methylation levels \"" << topId << "\" not found for " << ids[i] << "\n";
-                return 1;
-            }
-            if (readSequence(fwdMethLevels[i], faiIndex, idx) != 0)
-            {
-                std::cerr << "ERROR: Problem reading \"" << topId << "\"\n";
-                return 1;
-            }
-
-            seqan::CharString bottomId = ids[i];
-            append(bottomId, "/BOT");
-            if (!getIdByName(faiIndex, bottomId, idx))
-            {
-                std::cerr << "ERROR: Methylation levels \"" << bottomId << "\" not found for " << ids[i] << "\n";
-                return 1;
-            }
-            if (readSequence(revMethLevels[i], faiIndex, idx) != 0)
-            {
-                std::cerr << "ERROR: Problem reading \"" << bottomId << "\"\n";
-                return 1;
-            }
-        }
-
-        return 0;
     }
 };
 
@@ -332,10 +345,10 @@ public:
             fragGenerator(rng, fragOptions)
     {
         // Build the partial sums.
-        resize(lengthSums, length(genome.seqs), 0);
-        for (unsigned i = 0; i < length(genome.seqs); ++i)
+        resize(lengthSums, numSeqs(genome.seqFaiIndex), 0);
+        for (unsigned i = 0; i < numSeqs(genome.seqFaiIndex); ++i)
         {
-            appendValue(lengthSums, length(genome.seqs[i]));
+            appendValue(lengthSums, sequenceLength(genome.seqFaiIndex, i));
             if (i > 0u)
                 lengthSums[i] += lengthSums[i - 1];
         }
@@ -344,6 +357,7 @@ public:
     // Simulate the fragments.
     void simulate()
     {
+        /*
         seqan::CharString id;
         seqan::Dna5String contig, seq;
 
@@ -384,8 +398,7 @@ public:
             // TODO(holtgrew): Check return value?
             writeRecord(outputStream, ss.str(), fragSeq, outOptions);
         }
-
-        return;
+        */
     }
 
     // Simulate bisulphite treatment of the given sequence with the location information given by the fragment.
@@ -395,7 +408,7 @@ public:
         {
             if ((!reverse && fragSeq[pos] != 'C') || (reverse && fragSeq[pos] != 'G'))  // Skip all non-cyteline chars
             {
-                SEQAN_ASSERT_EQ_MSG(genome.levelAt(frag.rId, pos + frag.beginPos, reverse), 0.0,
+                SEQAN_ASSERT_EQ_MSG(genome.levelAt(pos + frag.beginPos, reverse), 0.0,
                                     "Methylation for non-C should be 0 (frag.rId=%d, pos+frag.beginPos=%d, reverse=%d",
                                     frag.rId, pos + frag.beginPos, reverse);
                 continue;
@@ -403,7 +416,7 @@ public:
 
             // Decide whether fragSeq[pos] is methylated.  If this is the case then we leave it untouched.
             seqan::Pdf<seqan::Uniform<double> > pdf(0, 1);
-            if (pickRandomNumber(rng, pdf) < genome.levelAt(frag.rId, pos + frag.beginPos, reverse))
+            if (pickRandomNumber(rng, pdf) < genome.levelAt(pos + frag.beginPos, reverse))
                 continue;
 
             // Otherwise, pick whether we will convert.
