@@ -1,0 +1,31 @@
+Mason 2 TODOs
+=============
+
+URGENT
+------
+
+mason_sequencing2 (IN: genome.fa genome.vcf [genome_meth.fa])
+
+ * contig-wise VCF import, to interval trees
+ * simulation of reads (join by SAM from materialized)
+ * FASTQ input from a typical run for quality and N-patterns, cycle through data
+ * SAM from original without SVs
+ * SAM from original with indel SVs
+ * SAM from original with other SVs, clip after left part
+
+IMPORTANT
+---------
+
+ * use heap/tournament tree for merging in FastaJoiner
+ * simulation of BS-seq reads
+ * color-space data
+
+LATER
+-----
+
+ * exceptions instead of return codes
+ * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
+ * simulation from splicing data, spliced SAM as gold output
+ * add simulation of adaptors/barcodes
+ * PacBio read error models?
+ * different quality scales
