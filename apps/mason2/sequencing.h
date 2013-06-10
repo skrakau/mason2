@@ -573,7 +573,7 @@ public:
                                seqan::SequenceStream * in,
                                SequencingOptions const & options,
                                Technology tech) :
-            rng(rng), in(in), out(out), outR(outR), tech(tech), options(&options)
+            rng(rng), in(in), out(out), outR(outR), options(&options), tech(tech)
     {}
 
     std::auto_ptr<SequencingSimulator> make();

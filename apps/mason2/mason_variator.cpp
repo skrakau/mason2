@@ -292,7 +292,7 @@ public:
     seqan::Pdf<seqan::Beta> pdfC, pdfCG, pdfCHG, pdfCHH;
 
     MethylationLevelSimulator(TRng & rng, MasonVariatorOptions const & options) :
-            rng(rng), options(options),
+            options(options), rng(rng),
             pdfC(options.methMuC, options.methSigmaC, seqan::MeanStdDev()),
             pdfCG(options.methMuCG, options.methSigmaCG, seqan::MeanStdDev()),
             pdfCHG(options.methMuCHG, options.methSigmaCHG, seqan::MeanStdDev()),

@@ -107,7 +107,7 @@ int simulateGenome(seqan::SequenceStream & stream, SimulateGenomeOptions const &
         
         std::cerr << "contig " << id << " ...";
 
-        for (unsigned j = 0; j < options.contigLengths[i];)
+        for (int j = 0; j < options.contigLengths[i];)
         {
             double x = pickRandomNumber(rng, pdf);
             if (x < 0.25)

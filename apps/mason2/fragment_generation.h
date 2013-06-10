@@ -187,6 +187,8 @@ public:
                 return 1;
             }
         }
+
+        return 0;
     }
 };
 
@@ -237,7 +239,7 @@ public:
     seqan::Pdf<seqan::Uniform<int> > pdf;
 
     UniformFragmentGeneratorImpl(TRng & rng, int minLength, int maxLength) :
-            rng(rng), minLength(minLength), maxLength(maxLength), pdf(minLength, maxLength)
+            minLength(minLength), maxLength(maxLength), rng(rng), pdf(minLength, maxLength)
     {}
 
     virtual void generate(Fragment & frag, int rId, unsigned contigLength);
@@ -262,7 +264,7 @@ public:
     seqan::Pdf<seqan::Normal> pdf;
 
     NormalFragmentGeneratorImpl(TRng & rng, int meanLength, int stdDevLength) :
-            rng(rng), meanLength(meanLength), stdDevLength(stdDevLength), pdf(meanLength, stdDevLength)
+            meanLength(meanLength), stdDevLength(stdDevLength), rng(rng), pdf(meanLength, stdDevLength)
     {}
 
     virtual void generate(Fragment & frag, int rId, unsigned contigLength);

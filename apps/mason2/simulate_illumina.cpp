@@ -196,7 +196,7 @@ void _simulateSequence(TRead & read, TRng & rng, TFrag const & frag,
 
     for (unsigned i = 0; i < length(cigar); ++i)
     {
-        unsigned numSimulate = 0;
+        //unsigned numSimulate = 0;
         if (cigar[i].operation == 'M')
         {
             for (unsigned j = 0; j < cigar[i].count; ++j, ++it)
