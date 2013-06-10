@@ -706,7 +706,7 @@ int main(int argc, char const ** argv)
         std::cerr << " OK\n";
     }
 
-    // Configure output streams to write out all sequences in a single line.
+    // Configure output streams to write out each sequence in a single line.
     outReads.outputOptions.lineLength = 0;
     outReadsRight.outputOptions.lineLength = 0;
 
