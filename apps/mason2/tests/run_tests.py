@@ -57,8 +57,6 @@ def main(source_base, binary_base):
             '', right=True),
         app_tests.ReplaceTransform(ph.temp_dir + os.sep, '', right=True),
         ]
-    print 'ASDF', os.path.join(ph.source_base_path, 'sandbox/mason2/apps/mason2/tests') + os.sep,
-
 
     # ============================================================
     # Run with rates only (no TSV file), no methylation.
@@ -82,9 +80,14 @@ def main(source_base, binary_base):
         redir_stderr=ph.outFile('random_var1.vcf.stderr'),
         to_diff=[(ph.inFile('random_var1.vcf'),
                   ph.outFile('random_var1.vcf'),
-                 (ph.inFile('random_var1.fasta'), ph.outFile('random_var1.fasta')),
-                 (ph.inFile('random_var1.vcf.stderr'), ph.outFile('random_var1.vcf.stderr'), transforms),
-                 (ph.inFile('random_var1.vcf.stdout'), ph.outFile('random_var1.vcf.stdout'), transforms),
+                  transforms),
+                 (ph.inFile('random_var1.fasta'),
+                  ph.outFile('random_var1.fasta')),
+                 (ph.inFile('random_var1.vcf.stderr'),
+                  ph.outFile('random_var1.vcf.stderr'),
+                  transforms),
+                 (ph.inFile('random_var1.vcf.stdout'), ph.outFile('random_var1.vcf.stdout'),
+                  transforms),
                  ])
     conf_list.append(conf)
 
