@@ -19,6 +19,7 @@ IMPORTANT
  * use heap/tournament tree for merging in FastaJoiner
  * simulation of BS-seq reads
  * color-space data
+ * parallelization of mason_fragments and mason_sequencing2
 
 LATER
 -----
@@ -29,3 +30,8 @@ LATER
  * add simulation of adaptors/barcodes
  * PacBio read error models?
  * different quality scales
+
+Mason Variator Refactoring
+==========================
+
+ * Put (1) variant data types and (2) variant materialization routines into header.
