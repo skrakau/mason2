@@ -6,7 +6,7 @@ __OPTIONS_____________________________________________________________________
 FASTA IN             	random.fasta
 SV SIZE TSV IN       	
 VCF OUT              	random_var1.vcf
-FASTA OUT            	random_var2.fasta
+FASTA OUT            	random_var1.fasta
 BREAKPOINT TSV OUT   	random_var1_bp.txt
 
 NUM HAPLOTYPES       	2

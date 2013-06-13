@@ -875,7 +875,7 @@ public:
         // Create contig with the small and large variants.
         VariantMaterializer varMat(rng, variants, options.methSimOptions);
         seqan::Dna5String seqVariants;
-        std::vector<int> breakpoints;  // TODO(holtgrew): Write out breakpoints!
+        std::vector<int> breakpoints;
         if (options.methSimOptions.simulateMethylationLevels)
         {
             MethylationLevels levelsVariants;
@@ -890,9 +890,6 @@ public:
             varMat.run(seqVariants, breakpoints, contig, hId);
         }
 
-        // Write out breakpoints.
-        if (!empty(options.outputBreakpointFile))
-        {
         // Build sequence id.
         seqan::CharString id = sequenceName(faiIndex, rId);
         append(id, options.haplotypeSep);
@@ -900,8 +897,10 @@ public:
         snprintf(buffer, 19, "%d", hId);
         append(id, buffer);
 
-            breakpointsOut
-        }
+        // Write out breakpoints.
+        if (!empty(options.outputBreakpointFile))
+            for (std::vector<int>::const_iterator it = breakpoints.begin(); it != breakpoints.end(); ++it)
+                breakpointsOut << id << "\t" << (*it + 1) << "\n";
 
         // Write out sequence with variants.
         return writeRecord(outSeqStream, id, seqVariants);
