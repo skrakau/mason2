@@ -39,7 +39,6 @@
 // TODO(holtgrew): Currently, inserted sequence is picked at random, we could also give an insertion database.
 // TODO(holtgrew): Currently, there only is support for left-to-right translocations.
 // TODO(holtgrew): Allow inversion in translocation.
-// TODO(holtgrew): Add support for parsing VCF.
 // TODO(holtgrew): Simulate different SNPs/small variations for duplications, input for repeat separation.
 
 #include <seqan/arg_parse.h>

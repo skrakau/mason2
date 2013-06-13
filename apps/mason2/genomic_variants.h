@@ -319,6 +319,13 @@ struct Variants
 
     // Structural variation record.
     seqan::String<StructuralVariantRecord> svRecords;
+
+    void clear()
+    {
+        seqan::clear(snps);
+        seqan::clear(smallIndels);
+        seqan::clear(svRecords);
+    }
 };
 
 // --------------------------------------------------------------------------
@@ -327,7 +334,7 @@ struct Variants
 
 // Materialize variants stored in a Variants object.
 //
-// Note that the class assumes that all variants come from the same contig.
+// Note that the class assumes that all variants come from the same contig and haplotype.
 
 // TODO(holtgrew): Rename to ContigMaterializer.
 // TODO(holtgrew): Add translation of coordinates.
@@ -346,6 +353,10 @@ public:
     int verbosity;
 
     VariantMaterializer() : rng(), variants(), verbosity(1)
+    {}
+
+    VariantMaterializer(TRng & rng, Variants const & variants) :
+            rng(&rng), variants(&variants),  verbosity(1)
     {}
 
     VariantMaterializer(TRng & rng, Variants const & variants, MethylationLevelSimulatorOptions const & methSimOptions) :
@@ -427,7 +438,8 @@ int VariantMaterializer::_runImpl(
         MethylationLevels const * refLvls,
         int haplotypeId)
 {
-
+    breakpoints.clear();
+    
     // Apply small variants.  We get a sequence with the small variants and a journal of the difference to contig.
     seqan::Dna5String seqSmallVariants;
     TJournalEntries journal;

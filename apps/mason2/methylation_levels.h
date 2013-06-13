@@ -35,7 +35,9 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_METHYLATION_LEVELS_H_
 #define SANDBOX_MASON2_APPS_MASON2_METHYLATION_LEVELS_H_
 
+#include <seqan/index.h>  // for Shape<>
 #include <seqan/sequence.h>
+#include <seqan/sequence_journaled.h>  // for the journal
 
 // ============================================================================
 // Forwards

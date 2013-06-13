@@ -20,6 +20,7 @@ IMPORTANT
  * simulation of BS-seq reads
  * color-space data
  * parallelization of mason_fragments and mason_sequencing2
+ * BUG: did not see deletion in example output VCF - simulated?
 
 LATER
 -----
@@ -30,6 +31,7 @@ LATER
  * add simulation of adaptors/barcodes
  * PacBio read error models?
  * different quality scales
+ * more robust parsing of VCF for variant import
 
 Mason Variator Refactoring
 ==========================

@@ -35,8 +35,10 @@ def main(source_base, binary_base):
     # Auto-detect the binary path.
     # ============================================================
 
-    path_to_program = app_tests.autolocateBinary(
+    path_to_variator = app_tests.autolocateBinary(
       binary_base, 'sandbox/mason2/apps/mason2', 'mason_variator')
+    path_to_materializer = app_tests.autolocateBinary(
+      binary_base, 'sandbox/mason2/apps/mason2', 'mason_materializer')
 
     # ============================================================
     # Built TestConf list.
@@ -59,11 +61,11 @@ def main(source_base, binary_base):
         ]
 
     # ============================================================
-    # Run with rates only (no TSV file), no methylation.
+    # Test mason_variator
     # ============================================================
 
     conf = app_tests.TestConf(
-        program=path_to_program,
+        program=path_to_variator,
         args=['-if', ph.inFile('random.fasta'),
               '-n', '2',
               '-ov', ph.outFile('random_var1.vcf'),
@@ -99,12 +101,35 @@ def main(source_base, binary_base):
                  ])
     conf_list.append(conf)
 
+    # ============================================================
+    # Test mason_materializer
+    # ============================================================
+
+    conf = app_tests.TestConf(
+        program=path_to_materializer,
+        args=['-if', ph.inFile('random.fasta'),
+              '-iv', ph.inFile('random_var1.vcf'),
+              '-of', ph.outFile('materializer.random_var1.fasta'),
+              ],
+        redir_stdout=ph.outFile('materializer.random_var1.stdout'),
+        redir_stderr=ph.outFile('materializer.random_var1.stderr'),
+        to_diff=[(ph.inFile('materializer.random_var1.fasta'),
+                  ph.outFile('materializer.random_var1.fasta')),
+                 (ph.inFile('materializer.random_var1.stdout'),
+                  ph.outFile('materializer.random_var1.stdout'),
+                  transforms),
+                 (ph.inFile('materializer.random_var1.stderr'),
+                  ph.outFile('materializer.random_var1.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
     # Execute the tests.
     failures = 0
     for conf in conf_list:
         res = app_tests.runTest(conf)
         # Output to the user.
-        print ' '.join(['mason_variator'] + conf.args),
+        print ' '.join(['mason_variator/mason_materializer'] + conf.args),
         if res:
              print 'OK'
         else:

@@ -34,7 +34,9 @@ include_directories (${SEQAN_INCLUDE_DIRS})
 add_definitions (${SEQAN_DEFINITIONS})
 
 # Update the list of file names below if you add source files to your application.
-add_executable (mason_genome mason_genome.cpp simulate_genome.h)
+add_executable (mason_genome
+                mason_genome.cpp
+                simulate_genome.h)
 add_executable (mason_fragments
                 mason_fragments.cpp
                 fragment_generation.h
@@ -51,12 +53,16 @@ add_executable (mason_variator
                 variation_size_tsv.h
                 genomic_variants.h
                 methylation_levels.h)
+add_executable (mason_materializer
+                mason_materializer.cpp
+                genomic_variants.h)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
 target_link_libraries (mason_fragments ${SEQAN_LIBRARIES})
 target_link_libraries (mason_sequencing ${SEQAN_LIBRARIES})
 target_link_libraries (mason_variator ${SEQAN_LIBRARIES})
+target_link_libraries (mason_materializer ${SEQAN_LIBRARIES})
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
