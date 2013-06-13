@@ -439,6 +439,9 @@ int VariantMaterializer::_runImpl(
         int haplotypeId)
 {
     breakpoints.clear();
+    clear(*resultSeq);
+    if (resultLvls)
+        resultLvls->clear();
     
     // Apply small variants.  We get a sequence with the small variants and a journal of the difference to contig.
     seqan::Dna5String seqSmallVariants;

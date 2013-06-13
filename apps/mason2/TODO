@@ -32,8 +32,3 @@ LATER
  * PacBio read error models?
  * different quality scales
  * more robust parsing of VCF for variant import
-
-Mason Variator Refactoring
-==========================
-
- * Put (1) variant data types and (2) variant materialization routines into header.

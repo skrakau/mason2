@@ -113,7 +113,7 @@ def main(source_base, binary_base):
               ],
         redir_stdout=ph.outFile('materializer.random_var1.stdout'),
         redir_stderr=ph.outFile('materializer.random_var1.stderr'),
-        to_diff=[(ph.inFile('materializer.random_var1.fasta'),
+        to_diff=[(ph.inFile('random_var1.fasta'),
                   ph.outFile('materializer.random_var1.fasta')),
                  (ph.inFile('materializer.random_var1.stdout'),
                   ph.outFile('materializer.random_var1.stdout'),

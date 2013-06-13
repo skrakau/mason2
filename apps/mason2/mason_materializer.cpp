@@ -346,8 +346,11 @@ public:
         // Compute number of haplotypes.
         SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
         seqan::StringSet<seqan::CharString> xs;
-        splitString(xs, vcfRecord.genotypeInfos[0]);
-        numHaplotypes = length(xs);
+        seqan::RecordReader<seqan::CharString, seqan::SinglePass<seqan::StringReader> >
+                reader(vcfRecord.genotypeInfos[0]);
+        numHaplotypes = 1;
+        for (; !atEnd(reader); goNext(reader))
+            numHaplotypes += (value(reader) == '|' || value(reader) == '/');
 
         std::vector<seqan::VcfRecord> chunk;
         while (vcfRecord.rID != -1 && vcfRecord.rID <= rID)
@@ -359,8 +362,10 @@ public:
             {
                 chunk.push_back(vcfRecord);
                 if (chunk.size() == 6u)
+                {
                     _appendToVariantsBnd(variants, chunk);
-                chunk.clear();
+                    chunk.clear();
+                }
             }
             else
             {
@@ -571,8 +576,52 @@ public:
     // Append chunk of 6 BND records to variants.
     void _appendToVariantsBnd(Variants & variants, std::vector<seqan::VcfRecord> const & vcfRecords)
     {
-        // SEQAN_FAIL("Check chunk for being a valid translocation!");
-        SEQAN_FAIL("Implement me!");
+        // Sanity check.
+        SEQAN_CHECK(length(vcfRecords) == 6u, "Must be 6-tuple.");
+        SEQAN_CHECK(vcfRecords[0].beginPos + 1 == vcfRecords[1].beginPos, "Invalid BND 6-tuple.");
+        SEQAN_CHECK(vcfRecords[2].beginPos + 1 == vcfRecords[3].beginPos, "Invalid BND 6-tuple.");
+        SEQAN_CHECK(vcfRecords[4].beginPos + 1 == vcfRecords[5].beginPos, "Invalid BND 6-tuple.");
+        SEQAN_CHECK(vcfRecords[1].beginPos < vcfRecords[2].beginPos, "Wrong ordering.");
+        SEQAN_CHECK(vcfRecords[3].beginPos < vcfRecords[4].beginPos, "Wrong ordering.");
+
+        // Add translocation.
+        StructuralVariantRecord svRecord;
+        svRecord.kind = StructuralVariantRecord::TRANSLOCATION;
+        svRecord.rId = vcfRecords[0].rID;
+        svRecord.pos = vcfRecords[1].beginPos;
+        svRecord.targetRId = svRecord.rId;
+        svRecord.targetPos = vcfRecords[5].beginPos;
+        svRecord.size = vcfRecords[3].beginPos - vcfRecords[1].beginPos;
+        svRecord.haplotype = 0;
+
+        // Split the target variants.
+        SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
+        seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> >
+                reader(vcfRecord.genotypeInfos[0]);
+        seqan::CharString buffer;
+        svRecord.haplotype = 0;
+        for (; !atEnd(reader); goNext(reader))
+            if ((value(reader) == '|' || value(reader) == '/'))
+            {
+                if (!empty(buffer))
+                {
+                    unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
+                    if (idx != 0u)  // if not == ref
+                        appendValue(variants.svRecords, svRecord);
+                }
+                svRecord.haplotype++;
+                clear(buffer);
+            }
+            else
+            {
+                appendValue(buffer, value(reader));
+            }
+        if (!empty(buffer))
+        {
+            unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
+            if (idx != 0u)  // if not == ref
+                appendValue(variants.svRecords, svRecord);
+        }
     }
 };
 
