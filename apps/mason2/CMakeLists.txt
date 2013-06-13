@@ -49,7 +49,8 @@ add_executable (mason_sequencing
 add_executable (mason_variator
                 mason_variator.cpp
                 variation_size_tsv.h
-                genomic_variants.h)
+                genomic_variants.h
+                methylation_levels.h)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
