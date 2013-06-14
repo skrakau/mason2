@@ -83,6 +83,9 @@ public:
     // The file pointers for each contig.
     std::vector<FILE *> files;
 
+    IdSplitter() : numContigs(0)
+    {}
+
     IdSplitter(unsigned numContigs) : numContigs(numContigs)
     {}
 
@@ -223,6 +226,123 @@ public:
         active[idx] = _loadNext(id, seq, idx);
         swap(id, ids[idx]);
         swap(seq, seqs[idx]);
+        numActive -= !active[idx];
+
+        return 0;
+    }
+};
+
+// ----------------------------------------------------------------------------
+// Class SamJoiner
+// ----------------------------------------------------------------------------
+
+// Allows joining by id name from FASTA data stored in a IdSplitter.
+//
+// Construct with IdSplitter after reset() call.
+
+// TODO(holtgrew): Could use a heap/tournament tree.
+
+// Compare two BAM alignment records by query name, tie is broken by first/last flag, first < last.
+
+bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
+                          seqan::BamAlignmentRecord const & rhs)
+{
+    seqan::Lexical<> cmp(lhs.qName, rhs.qName);
+    if (isLess(cmp) || (isEqual(cmp) && hasFlagFirst(lhs)))
+        return true;
+    return false;
+}
+
+class SamJoiner
+{
+public:
+    // The type of the record reader to use.
+    typedef seqan::RecordReader<FILE *, seqan::SinglePass<> > TReader;
+
+    // The IdSplitter to use.
+    IdSplitter * splitter;
+    // Number of active files.
+    unsigned numActive;
+    // Buffer for id and sequence for each input file.
+    seqan::String<seqan::BamAlignmentRecord> records;
+    // Maps files for activeness.
+    std::vector<bool> active;
+    // Record reads, one for each input file.
+    std::vector<TReader *> readers;
+
+    SamJoiner() : splitter(), numActive(0)
+    {}
+
+    SamJoiner(IdSplitter & splitter) : splitter(&splitter), numActive(0)
+    {
+        init();
+    }
+
+    ~SamJoiner()
+    {
+        for (unsigned i = 0; i < readers.size(); ++i)
+            delete readers[i];
+        readers.clear();
+    }
+
+    void init()
+    {
+        resize(records, splitter->files.size());
+        active.resize(splitter->files.size());
+
+        for (unsigned i = 0; i < splitter->files.size(); ++i)
+        {
+            readers.push_back(new TReader(splitter->files[i]));
+            active[i] = _loadNext(records[i], i);
+            numActive += (active[i] != false);
+        }
+    }
+
+    bool _loadNext(seqan::BamAlignmentRecord & record, unsigned idx)
+    {
+        if (seqan::atEnd(*readers[idx]))
+            return false;
+        if (readRecord(record, *readers[idx], seqan::Sam()) != 0)
+        {
+            std::cerr << "ERROR: Problem reading temporary data.\n";
+            exit(1);
+        }
+        return true;
+    }
+
+    bool atEnd() const
+    {
+        return (numActive == 0);
+    }
+
+    // Get next BAM alignment record to lhs.  If it is paired-end, load the second mate as well.
+    int get(seqan::BamAlignmentRecord & lhs, seqan::BamAlignmentRecord & rhs)
+    {
+        unsigned idx = seqan::maxValue<unsigned>();
+        for (unsigned i = 0; i < length(records); ++i)
+        {
+            if (!active[i])
+                continue;
+            if (idx == seqan::maxValue<unsigned>() || ltBamAlignmentRecord(records[i], records[idx]))
+                idx = i;
+        }
+        if (idx == seqan::maxValue<unsigned>())
+            return 1;
+
+        // We use double-buffering and the input parameters as buffers.
+        using std::swap;
+        if (hasFlagMultiple(records[idx]))
+        {
+            active[idx] = _loadNext(rhs, idx);
+            SEQAN_ASSERT_MSG(active[idx], "There is one more to load.");
+            active[idx] = _loadNext(lhs, idx);
+            swap(lhs, records[idx]);
+        }
+        else
+        {
+            active[idx] = _loadNext(lhs, idx);
+            swap(lhs, records[idx]);
+        }
         numActive -= !active[idx];
 
         return 0;

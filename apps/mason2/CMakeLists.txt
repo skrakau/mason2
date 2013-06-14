@@ -57,6 +57,9 @@ add_executable (mason_materializer
                 mason_materializer.cpp
                 vcf_materialization.h
                 genomic_variants.h)
+add_executable (mason_simulator
+                mason_simulator.cpp
+                mason_types.h)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
@@ -64,6 +67,7 @@ target_link_libraries (mason_fragments ${SEQAN_LIBRARIES})
 target_link_libraries (mason_sequencing ${SEQAN_LIBRARIES})
 target_link_libraries (mason_variator ${SEQAN_LIBRARIES})
 target_link_libraries (mason_materializer ${SEQAN_LIBRARIES})
+target_link_libraries (mason_simulator ${SEQAN_LIBRARIES})
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
