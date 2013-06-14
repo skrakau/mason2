@@ -18,3 +18,4 @@ ${VARIATOR} -n 2 -if random.fasta -ov random_var1.vcf -of random_var1.fasta --sn
 
 echo "${MATERIALIZER} -if random.fasta -iv random_var1.vcf -of materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr"
 ${MATERIALIZER} -if random.fasta -iv random_var1.vcf -of materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr
+rm materializer.random_var1.fasta  # we'll compare against variator output

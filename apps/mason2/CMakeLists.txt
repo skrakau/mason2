@@ -55,6 +55,7 @@ add_executable (mason_variator
                 methylation_levels.h)
 add_executable (mason_materializer
                 mason_materializer.cpp
+                vcf_materialization.h
                 genomic_variants.h)
 
 # Add dependencies found by find_package (SeqAn).

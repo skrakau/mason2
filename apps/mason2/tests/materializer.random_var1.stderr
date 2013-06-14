@@ -1,3 +1,7 @@
-Opening VCF           	random_var1.vcf... OK
-Loading Reference Index random.fasta ... OK (2 seqs)
-Opening Output File     materializer.random_var1.fasta... OK
+__INITIALIZATION_____________________________________________________________
+
+Opening files... OK
+
+__MATERIALIZING______________________________________________________________
+
+Materializing... 1/0 1/1 2/0 2/1 DONE

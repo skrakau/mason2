@@ -12,7 +12,3 @@ INPUT VCF    	random_var1.vcf
 OUTPUT FILE  	materializer.random_var1.fasta
 
 
-__OPENING FILES______________________________________________________________
-
-__MATERIALIZING______________________________________________________________
-

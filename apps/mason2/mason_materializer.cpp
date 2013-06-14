@@ -46,7 +46,7 @@
 #include <seqan/sequence.h>
 #include <seqan/vcf_io.h>
 
-#include "genomic_variants.h"
+#include "vcf_materialization.h"
 
 // ==========================================================================
 // Classes
@@ -86,542 +86,66 @@ struct MasonMaterializerOptions
 // Class MasonMaterializerApp
 // --------------------------------------------------------------------------
 
-bool contains(seqan::CharString const & haystack, char const * needle)
-{
-    return strstr(toCString(haystack), needle);
-}
-
-int getSVLen(seqan::CharString const & str)
-{
-    seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> > reader(str);
-
-    // Parse out key/value pairs and interpret SVLEN.
-    seqan::CharString key, val;
-    enum { IN_KEY, IN_VALUE } state = IN_KEY;
-    for (; !atEnd(reader); goNext(reader))
-    {
-        if (value(reader) == '=')
-        {
-            state = IN_VALUE;
-            continue;
-        }
-        else if (value(reader) == ';')
-        {
-            if (key == "SVLEN")
-                return seqan::lexicalCast<int>(val);
-            
-            clear(val);
-            clear(key);
-            state = IN_KEY;
-            continue;
-        }
-        else if (state == IN_KEY)
-        {
-            appendValue(key, value(reader));
-        }
-        else  // (state == IN_VALUE)
-        {
-            appendValue(val, value(reader));
-        }
-    }
-    
-    if (key == "SVLEN")
-        return seqan::lexicalCast<int>(val);
-
-    SEQAN_FAIL("Missing INFO SVLEN %s", toCString(str));
-    return 0;
-}
-
-std::pair<seqan::CharString, int> getTargetPos(seqan::CharString const & str)
-{
-    seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> > reader(str);
-
-    // Parse out key/value pairs and interpret SVLEN.
-    seqan::CharString key, val;
-    enum { IN_KEY, IN_VALUE } state = IN_KEY;
-    for (; !atEnd(reader); goNext(reader))
-    {
-        if (value(reader) == '=')
-        {
-            state = IN_VALUE;
-            continue;
-        }
-        else if (value(reader) == ';')
-        {
-            if (key == "TARGETPOS")
-            {
-                seqan::StringSet<seqan::CharString> xs;
-                splitString(xs, val, ':');
-                SEQAN_CHECK(length(xs) == 2u, "TARGETPOS has invalid format %s", toCString(val));
-                SEQAN_CHECK(!empty(xs[0]) && !empty(xs[1]), "TARGETPOS has invalid format %s", toCString(val));
-                return std::make_pair(xs[0], seqan::lexicalCast<int>(xs[1]));
-            }
-            
-            clear(val);
-            clear(key);
-            state = IN_KEY;
-            continue;
-        }
-        else if (state == IN_KEY)
-        {
-            appendValue(key, value(reader));
-        }
-        else  // (state == IN_VALUE)
-        {
-            appendValue(val, value(reader));
-        }
-    }
-    
-    if (key == "TARGETPOS")
-    {
-        seqan::StringSet<seqan::CharString> xs;
-        splitString(xs, val, ':');
-        SEQAN_CHECK(length(xs) == 2u, "TARGETPOS has invalid format %s", toCString(val));
-        SEQAN_CHECK(!empty(xs[0]) && !empty(xs[1]), "TARGETPOS has invalid format %s", toCString(val));
-        return std::make_pair(xs[0], seqan::lexicalCast<int>(xs[1]));
-    }
-
-    SEQAN_FAIL("Missing INFO TARGETPOS %s", toCString(str));
-    return std::make_pair("", 0);
-}
-
 class MasonMaterializerApp
 {
 public:
     // The configuration to use.
     MasonMaterializerOptions const & options;
 
-    // -----------------------------------------------------------------------
-    // VCF loading.
-    //
-    // We will load from vcfStream into vcfRecord.
-    // -----------------------------------------------------------------------
-    // The index of the current contig.
-    int rID;
-    // The number of haplotypes in vcfStream.
-    unsigned numHaplotypes;
-    // The VCF stream to load from.
-    seqan::VcfStream vcfStream;
-    // The current VCF record.  rID == INVALID_REFID if invalid.
-    seqan::VcfRecord vcfRecord;
-
-    // FAI index for reading input sequence file.
-    seqan::FaiIndex faiIndex;
+    // Materialization of VCF.
+    VcfMaterializer vcfMat;
+    
     // Output sequence stream.
     seqan::SequenceStream outStream;
 
     MasonMaterializerApp(MasonMaterializerOptions const & options) :
-            options(options), rID(-1), numHaplotypes(0)
+            options(options), vcfMat(toCString(options.inFastaFile), toCString(options.inVcfFile))
     {}
 
     int run()
     {
-        if (_init() != 0)
-            return 1;
-
-        // Perform genome simulation.
-        std::cout << "__MATERIALIZING______________________________________________________________\n"
+        // Intialization
+        std::cerr << "__INITIALIZATION_____________________________________________________________\n"
                   << "\n";
 
-        // We do not use the methylation simulation in the materializer so the RNG will not be touched.
-        TRng rng;
-        
-        // Load variants for each contig and materialize them.
-        Variants variants;
-        std::vector<int> breakpoints;  // unused
-        seqan::Dna5String refSeq, seq;  // reference sequence and materialized sequence
-        for (unsigned rID = 0; rID < length(vcfStream.header.sequenceNames); ++rID)
+        std::cerr << "Opening files...";
+        try
         {
-            // Load reference sequence.
-            unsigned idx = 0;
-            if (!getIdByName(faiIndex, vcfStream.header.sequenceNames[rID], idx))
-            {
-                std::cerr << "ERROR: Sequence " << vcfStream.header.sequenceNames[rID]
-                          << " from VCF not known in FAI.\n";
-                return 1;
-            }
-            if (readSequence(refSeq, faiIndex, idx) != 0)
-            {
-                std::cerr << "ERROR: Could not load sequence from FAI.\n";
-                return 1;
-            }
-
-            // Load variants.
-            if (_loadVariantsForContig(variants, rID) != 0)
-                return 1;
-
-            // Materialize variants and write them out.
-            for (unsigned hID = 0; hID < numHaplotypes; ++hID)
-            {
-                VariantMaterializer varMat(rng, variants);
-                varMat.run(seq, breakpoints, refSeq, hID);
-
-                std::stringstream ssName;
-                ssName << vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep
-                       << hID;
-
-                if (writeRecord(outStream, ssName.str(), seq) != 0)
-                {
-                    std::cerr << "ERROR: Could not write materialized sequence to output.\n";
-                    return 1;
-                }
-            }
+            vcfMat.init();
+            open(outStream, toCString(options.outputFilename), seqan::SequenceStream::WRITE);
+            if (!isGood(outStream))
+                throw MasonIOException("Could not open output file.");
         }
+        catch (MasonIOException e)
+        {
+            std::cerr << "\nERROR: " << e.what() << "\n";
+            return 1;
+        }
+        std::cerr << " OK\n";
 
-        return 0;
-    }
-
-    int _init()
-    {
         // Perform genome simulation.
-        std::cout << "__OPENING FILES______________________________________________________________\n"
+        std::cerr << "\n__MATERIALIZING______________________________________________________________\n"
                   << "\n";
 
-        // Open VCF stream.
-        if (options.verbosity >= 1)
-            std::cerr << "Opening VCF           \t" << options.inVcfFile << "...";
-        open(vcfStream, toCString(options.inVcfFile));
-        if (!isGood(vcfStream))
+        // The identifiers of the just materialized data.
+        int rID = 0, hID = 0;
+        seqan::Dna5String seq;
+        std::cerr << "Materializing...";
+        while (vcfMat.materializeNext(seq, rID, hID))
         {
-            std::cerr << "ERROR: Could not open input VCF stream.\n";
-            return 1;
-        }
-        if (options.verbosity >= 1)
-            std::cerr << " OK\n";
-
-        // Read first VCF record.
-        if (!atEnd(vcfStream) && readRecord(vcfRecord, vcfStream) != 0)
-        {
-            std::cerr << "ERROR: Problem reading from VCF file.\n";
-            return 1;
-        }
-
-        // Open input FASTA file and FAI.
-        std::cerr << "Loading Reference Index " << options.inFastaFile << " ...";
-        if (read(faiIndex, toCString(options.inFastaFile)) != 0)
-        {
-            std::cerr << " FAILED (not fatal, we can just build it)\n";
-            std::cerr << "Building Index        " << options.inFastaFile << ".fai ...";
-            if (build(faiIndex, toCString(options.inFastaFile)) != 0)
+            std::stringstream ssName;
+            ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << hID;
+            std::cerr << " " << ssName.str();
+            
+            if (writeRecord(outStream, ssName.str(), seq) != 0)
             {
-                std::cerr << "Could not build FAI index.\n";
+                std::cerr << "ERROR: Could not write materialized sequence to output.\n";
                 return 1;
             }
-            std::cerr << " OK\n";
-            seqan::CharString faiPath = options.inFastaFile;
-            append(faiPath, ".fai");
-            std::cerr << "Reference Index       " << faiPath << " ...";
-            if (write(faiIndex, toCString(faiPath)) != 0)
-            {
-                std::cerr << "Could not write FAI index we just built.\n";
-                return 1;
-            }
-            std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
         }
-        else
-        {
-            std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
-        }
-
-        // Open output FASTA file.
-        if (options.verbosity >= 1)
-            std::cerr << "Opening Output File     " << options.outputFilename << "...";
-        open(outStream, toCString(options.outputFilename), seqan::SequenceStream::WRITE);
-        if (!isGood(outStream))
-        {
-            std::cerr << "ERROR: Problem opening output FASTA file for writing.\n";
-            return 1;
-        }
-        if (options.verbosity >= 1)
-            std::cerr << " OK\n";
+        std::cerr << " DONE\n";
 
         return 0;
-    }
-
-    // Load variants of next contig into variants.
-    int _loadVariantsForContig(Variants & variants, int rID)
-    {
-        variants.clear();
-
-        // Compute number of haplotypes.
-        SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-        seqan::StringSet<seqan::CharString> xs;
-        seqan::RecordReader<seqan::CharString, seqan::SinglePass<seqan::StringReader> >
-                reader(vcfRecord.genotypeInfos[0]);
-        numHaplotypes = 1;
-        for (; !atEnd(reader); goNext(reader))
-            numHaplotypes += (value(reader) == '|' || value(reader) == '/');
-
-        std::vector<seqan::VcfRecord> chunk;
-        while (vcfRecord.rID != -1 && vcfRecord.rID <= rID)
-        {
-            // Translocations are the only SVs that are stored as breakends (BND).  We collect the BNDs in chunks of 6
-            // which then represent a translocation.  Requiring that the BNDs are stored in adjacent chunks of 6 records
-            // is a strong limitation but supporting more generic variations would be a bit too much here.
-            if (contains(vcfRecord.info, "SVTYPE=BND"))
-            {
-                chunk.push_back(vcfRecord);
-                if (chunk.size() == 6u)
-                {
-                    _appendToVariantsBnd(variants, chunk);
-                    chunk.clear();
-                }
-            }
-            else
-            {
-                SEQAN_CHECK(chunk.size() == 0u, "Found chunk of != 6 BND records!");
-                _appendToVariants(variants, vcfRecord);
-            }
-
-            if (atEnd(vcfStream))
-            {
-                vcfRecord.rID = -1;
-                continue;
-            }
-            if (readRecord(vcfRecord, vcfStream) != 0)
-            {
-                std::cerr << "ERROR: Problem reading from VCF\n";
-                return 1;
-            }
-        }
-
-        return 0;
-    }
-
-    // Append VCF record to variants.
-    void _appendToVariants(Variants & variants, seqan::VcfRecord const & vcfRecord)
-    {
-        // Compute maximal length of alternative.
-        unsigned altLength = 0;
-        seqan::StringSet<seqan::CharString> alts;
-        splitString(alts, vcfRecord.alt, ',');
-        for (unsigned i = 0; i < length(alts); ++i)
-            altLength = std::max(altLength, (unsigned)length(alts[i]));
-        
-        if (contains(vcfRecord.info, "SVTYPE"))  // Structural Variant
-        {
-            StructuralVariantRecord svRecord;
-            svRecord.rId = vcfRecord.rID;
-            svRecord.pos = vcfRecord.beginPos;
-            svRecord.haplotype = 0;
-
-            SEQAN_ASSERT_EQ(length(alts), 1u);
-            
-            if (contains(vcfRecord.info, "SVTYPE=INS"))  // Insertion
-            {
-                svRecord.kind = StructuralVariantRecord::INDEL;
-                svRecord.size = getSVLen(vcfRecord.info);
-                svRecord.seq = suffix(vcfRecord.alt, 1);
-            }
-            else if (contains(vcfRecord.info, "SVTYPE=DEL"))  // Deletion
-            {
-                svRecord.kind = StructuralVariantRecord::INDEL;
-                svRecord.size = -getSVLen(vcfRecord.info);
-            }
-            else if (contains(vcfRecord.info, "SVTYPE=INV"))  // Inversion
-            {
-                svRecord.kind = StructuralVariantRecord::INVERSION;
-                svRecord.size = getSVLen(vcfRecord.info);
-            }
-            else if (contains(vcfRecord.info, "SVTYPE=DUP"))  // Duplication
-            {
-                svRecord.kind = StructuralVariantRecord::DUPLICATION;
-                svRecord.size = getSVLen(vcfRecord.info);
-                std::pair<seqan::CharString, int> pos = getTargetPos(vcfRecord.info);
-                unsigned idx = 0;
-                if (!getIdByName(vcfStream._context.sequenceNames, pos.first, idx,
-                                 vcfStream._context.sequenceNamesCache))
-                    SEQAN_FAIL("Unknown sequence %s", toCString(pos.first));
-                svRecord.targetRId = idx;
-                svRecord.targetPos = pos.second - 1;
-            }
-            else if (contains(vcfRecord.info, "SVTYPE=BND"))  // Breakend (Must be Translocation)
-            {
-                SEQAN_FAIL("Unexpected 'SVTYPE=BND' at this place!");
-            }
-            else
-            {
-                SEQAN_FAIL("ERROR: Unknown SVTYPE!\n");
-            }
-
-            // Split the target variants.
-            SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-            seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> >
-                    reader(vcfRecord.genotypeInfos[0]);
-            seqan::CharString buffer;
-            svRecord.haplotype = 0;
-            for (; !atEnd(reader); goNext(reader))
-                if ((value(reader) == '|' || value(reader) == '/'))
-                {
-                    if (!empty(buffer))
-                    {
-                        unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-                        if (idx != 0u)  // if not == ref
-                            appendValue(variants.svRecords, svRecord);
-                    }
-                    svRecord.haplotype++;
-                    clear(buffer);
-                }
-                else
-                {
-                    appendValue(buffer, value(reader));
-                }
-            if (!empty(buffer))
-            {
-                unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-                if (idx != 0u)  // if not == ref
-                    appendValue(variants.svRecords, svRecord);
-            }
-        }
-        else if (length(vcfRecord.ref) == 1u && altLength == 1u)  // SNP
-        {
-            SnpRecord snpRecord;
-            snpRecord.rId = vcfRecord.rID;
-            snpRecord.pos = vcfRecord.beginPos;
-
-            // Split the alternatives.
-            seqan::StringSet<seqan::CharString> alternatives;
-            splitString(alternatives, vcfRecord.alt, ',');
-            
-            // Split the target variants.
-            SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-            seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> >
-                    reader(vcfRecord.genotypeInfos[0]);
-            seqan::CharString buffer;
-            snpRecord.haplotype = 0;
-            for (; !atEnd(reader); goNext(reader))
-                if ((value(reader) == '|' || value(reader) == '/'))
-                {
-                    if (!empty(buffer))
-                    {
-                        unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer),
-                                                (unsigned)length(alternatives));
-                        if (idx != 0u)  // if not == ref
-                        {
-                            SEQAN_ASSERT_NOT(empty(alternatives[idx - 1]));
-                            snpRecord.to = alternatives[idx - 1][0];
-                            appendValue(variants.snps, snpRecord);
-                        }
-                    }
-                    snpRecord.haplotype++;
-                    clear(buffer);
-                }
-                else
-                {
-                    appendValue(buffer, value(reader));
-                }
-            if (!empty(buffer))
-            {
-                unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer),
-                                        (unsigned)length(alternatives));
-                if (idx != 0u)  // if not == ref
-                {
-                    SEQAN_ASSERT_NOT(empty(alternatives[idx - 1]));
-                    snpRecord.to = alternatives[idx - 1][0];
-                    appendValue(variants.snps, snpRecord);
-                }
-            }
-        }
-        else  // Small Indel
-        {
-            SmallIndelRecord smallIndel;
-            smallIndel.rId = vcfRecord.rID;
-            smallIndel.pos = vcfRecord.beginPos;
-
-            SEQAN_ASSERT_NOT(contains(vcfRecord.alt, ","));  // only one alternative
-            SEQAN_ASSERT((length(vcfRecord.alt) == 1u) != (length(vcfRecord.ref) == 1u));  // XOR
-
-            smallIndel.haplotype = 0;
-            if (length(vcfRecord.ref) == 1u)  // insertion
-            {
-                smallIndel.seq = suffix(vcfRecord.alt, 1);
-                smallIndel.size = length(smallIndel.seq);
-            }
-            else  // deletion
-            {
-                smallIndel.size = -(int)(length(vcfRecord.ref) - 1);
-            }
-            
-            // Split the target variants.
-            SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-            seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> >
-                    reader(vcfRecord.genotypeInfos[0]);
-            seqan::CharString buffer;
-            smallIndel.haplotype = 0;
-            for (; !atEnd(reader); goNext(reader))
-                if ((value(reader) == '|' || value(reader) == '/'))
-                {
-                    if (!empty(buffer))
-                    {
-                        unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-                        if (idx != 0u)  // if not == ref
-                            appendValue(variants.smallIndels, smallIndel);
-                    }
-                    smallIndel.haplotype++;
-                    clear(buffer);
-                }
-                else
-                {
-                    appendValue(buffer, value(reader));
-                }
-            if (!empty(buffer))
-            {
-                unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-                if (idx != 0u)  // if not == ref
-                    appendValue(variants.smallIndels, smallIndel);
-            }
-        }
-    }
-
-    // Append chunk of 6 BND records to variants.
-    void _appendToVariantsBnd(Variants & variants, std::vector<seqan::VcfRecord> const & vcfRecords)
-    {
-        // Sanity check.
-        SEQAN_CHECK(length(vcfRecords) == 6u, "Must be 6-tuple.");
-        SEQAN_CHECK(vcfRecords[0].beginPos + 1 == vcfRecords[1].beginPos, "Invalid BND 6-tuple.");
-        SEQAN_CHECK(vcfRecords[2].beginPos + 1 == vcfRecords[3].beginPos, "Invalid BND 6-tuple.");
-        SEQAN_CHECK(vcfRecords[4].beginPos + 1 == vcfRecords[5].beginPos, "Invalid BND 6-tuple.");
-        SEQAN_CHECK(vcfRecords[1].beginPos < vcfRecords[2].beginPos, "Wrong ordering.");
-        SEQAN_CHECK(vcfRecords[3].beginPos < vcfRecords[4].beginPos, "Wrong ordering.");
-
-        // Add translocation.
-        StructuralVariantRecord svRecord;
-        svRecord.kind = StructuralVariantRecord::TRANSLOCATION;
-        svRecord.rId = vcfRecords[0].rID;
-        svRecord.pos = vcfRecords[1].beginPos;
-        svRecord.targetRId = svRecord.rId;
-        svRecord.targetPos = vcfRecords[5].beginPos;
-        svRecord.size = vcfRecords[3].beginPos - vcfRecords[1].beginPos;
-        svRecord.haplotype = 0;
-
-        // Split the target variants.
-        SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-        seqan::RecordReader<seqan::CharString const, seqan::SinglePass<seqan::StringReader> >
-                reader(vcfRecord.genotypeInfos[0]);
-        seqan::CharString buffer;
-        svRecord.haplotype = 0;
-        for (; !atEnd(reader); goNext(reader))
-            if ((value(reader) == '|' || value(reader) == '/'))
-            {
-                if (!empty(buffer))
-                {
-                    unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-                    if (idx != 0u)  // if not == ref
-                        appendValue(variants.svRecords, svRecord);
-                }
-                svRecord.haplotype++;
-                clear(buffer);
-            }
-            else
-            {
-                appendValue(buffer, value(reader));
-            }
-        if (!empty(buffer))
-        {
-            unsigned idx = std::min(seqan::lexicalCast<unsigned>(buffer), 1u);
-            if (idx != 0u)  // if not == ref
-                appendValue(variants.svRecords, svRecord);
-        }
     }
 };
 
