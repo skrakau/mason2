@@ -352,6 +352,8 @@ public:
                                                                               options.maxSVSize));
             if (isIndel)
             {
+                if (pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, 1)))
+                    size = -size;
                 if (!simulateSVIndel(variants, haploCount, rId, pos, size))
                     continue;
                 if (back(variants.svRecords).size < 0)
@@ -1184,7 +1186,7 @@ public:
             ss << "SVTYPE=INS";
         else
             ss << "SVTYPE=DEL";
-        ss << ";SVLEN=" << svRecord.size;
+        ss << ";SVLEN=" << abs(svRecord.size);
         vcfRecord.info = ss.str();
 
         // Compute the number of bases in the REF column (1 in case of insertion and (k + 1) in the case of a

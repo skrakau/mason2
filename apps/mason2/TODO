@@ -20,7 +20,6 @@ IMPORTANT
  * simulation of BS-seq reads
  * color-space data
  * parallelization of mason_fragments and mason_sequencing2
- * BUG: did not see deletion in example output VCF - simulated?
 
 LATER
 -----

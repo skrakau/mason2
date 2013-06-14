@@ -48,13 +48,13 @@ __SIMULATION__________________________________________________________________
 
 Simulation...
   1
-  snps:                24
+  snps:                26
   small indels:        5
   structural variants: 36
   2
-  snps:                0
-  small indels:        1
-  structural variants: 0
+  snps:                2
+  small indels:        0
+  structural variants: 2
 OK.
 
 
