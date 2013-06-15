@@ -61,7 +61,7 @@ public:
     TRng & rng;
 
     // The length of the contigs.
-    std::vector<int> lengthSums;
+    std::vector<__int64> lengthSums;
     // The number of haplotypes.
     int numHaplotypes;
     
@@ -75,8 +75,8 @@ public:
         int rID = 0;
         if (lengthSums.size() > 1u)
         {
-            seqan::Pdf<seqan::Uniform<int> > pdf(0, lengthSums.back() - 1);
-            int x = pickRandomNumber(rng, pdf);
+            seqan::Pdf<seqan::Uniform<__int64> > pdf(0, lengthSums.back() - 1);
+            __int64 x = pickRandomNumber(rng, pdf);
             for (unsigned i = 0; i < lengthSums.size(); ++i)
             {
                 if (x >= lengthSums[i])
@@ -100,6 +100,47 @@ public:
 };
 
 // --------------------------------------------------------------------------
+// Class ReadSimulatorThread
+// --------------------------------------------------------------------------
+
+// State for one thread for simulation of reads.
+
+class ReadSimulatorThread
+{
+public:
+    // Options for the read simulation.
+    MasonSimulatorOptions const * options;
+
+    // The random number generator to use for this thread.
+    TRng rng;
+
+    // The ids of the fragments.
+    std::vector<int> fragmentIds;
+
+    // Buffer with ids and sequence of reads simulated in this thread.
+    seqan::StringSet<seqan::CharString, seqan::Owner<seqan::ConcatDirect<> > > ids;
+    seqan::StringSet<seqan::Dna5String, seqan::Owner<seqan::ConcatDirect<> > > seqs;
+    seqan::StringSet<seqan::CharString, seqan::Owner<seqan::ConcatDirect<> > > quals;
+
+    ReadSimulatorThread() : options()
+    {}
+
+    void init(int seed, MasonSimulatorOptions const & newOptions)
+    {
+        reSeed(rng, seed);
+        options = &newOptions;
+    }
+
+    // Simulate next chunk.
+    void run()
+    {
+        clear(ids);
+        clear(seqs);
+        clear(quals);
+    }
+};
+
+// --------------------------------------------------------------------------
 // Class MasonSimulatorApp
 // --------------------------------------------------------------------------
 
@@ -112,6 +153,9 @@ public:
     // The random number generator to use for the simulation.
     TRng rng;
 
+    // Threads used for simulation.
+    std::vector<ReadSimulatorThread> threads;
+    
     // ----------------------------------------------------------------------
     // VCF Materialization
     // ----------------------------------------------------------------------
@@ -147,56 +191,175 @@ public:
     // ----------------------------------------------------------------------
 
     // For writing left/right reads.
-    // seqan::SequenceStream outSeqsLeft, outSeqsRight;
+    seqan::SequenceStream outSeqsLeft, outSeqsRight;
     // For writing the final SAM/BAM file.
-    // seqan::BamStream outBamStream;
+    seqan::BamStream outBamStream;
 
     MasonSimulatorApp(MasonSimulatorOptions const & options) :
-            options(options), rng(options.seed), contigPicker(rng)
+            options(options), rng(options.seed),
+            vcfMat(toCString(options.matOptions.fastaFileName), toCString(options.matOptions.vcfFileName)),
+            contigPicker(rng)
     {}
 
     int run()
     {
-        // Initialize.
-        _init();
-
         // Print the header and the options.
         _printHeader();
+        // Initialize.
+        _init();
+        // Simulate reads.
+        _simulateReads();
+
         return 0;
+    }
+
+    void _simulateReads()
+    {
+        std::cerr << "\n____READ SIMULATION___________________________________________________________\n"
+                  << "\n";
+
+        // (1) Distribute read ids to the contigs/haplotypes.
+        //
+        // We will simulate the reads in the order of contigs/haplotypes and in a final join script generate output file
+        // that are sorted by read id.
+        int seqCount = numSeqs(vcfMat.faiIndex);
+        int haplotypeCount = vcfMat.numHaplotypes;
+        std::cerr << "Distributing fragments to " << seqCount << " contigs (" << haplotypeCount
+                  << " haplotypes each) ...";
+        for (int i = 0; i < options.numFragments; ++i)
+            fwrite(&i, sizeof(int), 1, fragmentIdSplitter.files[contigPicker.toId(contigPicker.pick())]);
+        fragmentIdSplitter.reset();
+        std::cerr << " OK\n";
+
+        // (2) Simulate the reads in the order of contigs/haplotypes.
+        std::cerr << "\nSimulating Reads:\n\n";
+        seqan::Dna5String contigSeq;  // materialized contig
+        int rID = 0;  // current reference id
+        int hID = 0;  // current haplotype id
+        int contigFragmentCount = 0;  // number of reads on the contig
+        // Note that all shared variables are correctly synchronized by implicit flushes at the critical sections below.
+        while (vcfMat.materializeNext(contigSeq, rID, hID))
+        {
+            std::cerr << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
+            contigFragmentCount = 0;
+
+            SEQAN_OMP_PRAGMA(num_threads(options.numThreads))
+            {
+                int tID = omp_get_thread_num();
+
+                while (true)  // Execute as long as there are fragments left.
+                {
+                    // Read in the ids of the fragments to simulate.
+                    threads[tID].fragmentIds.resize(options.chunkSize);  // make space
+                    SEQAN_OMP_PRAGMA(critical(fragment_ids))
+                    {
+                        // Load the fragment ids to simulate for.
+                        int numRead = fread(&threads[tID].fragmentIds[0], sizeof(int), options.chunkSize,
+                                            fragmentIdSplitter.files[rID * haplotypeCount + hID]);
+                        contigFragmentCount += numRead;
+                        if (numRead == 0)
+                            break;  // No more work left.
+                        threads[tID].fragmentIds.resize(numRead);
+                    }
+                    
+                    // Perform the simulation.
+                    threads[tID].run();
+                    
+                    // Write out the temporary sequence.
+                    SEQAN_OMP_PRAGMA(critical(seq_io))
+                    {
+                        if (write2(fragmentSplitter.files[rID * haplotypeCount + hID],
+                                   threads[tID].ids, threads[tID].seqs, threads[tID].quals, seqan::Fastq()))
+                            throw MasonIOException("Could not write out temporary sequence.");
+                    }
+                    
+                    SEQAN_OMP_PRAGMA(critical(io_log))
+                    {
+                        std::cerr << '.' << std::flush;
+                    }
+                }
+            }
+            
+            std::cerr << " (" << contigFragmentCount << " fragments) OK\n";
+        }
+        std::cerr << "\nDone simulating reads.\n";
     }
 
     void _init()
     {
-        /*
+        std::cerr << "\n____INITIALIZING______________________________________________________________\n"
+                  << "\n";
+        
         // Initialize VCF materialization (reference FASTA and input VCF).
+        std::cerr << "Opening reference and variants file ...";
         vcfMat.init();
+        std::cerr << " OK\n";
 
-        // Configure contigPicker.
+        // Configure contigPicker and fragment id splitter.
+        std::cerr << "Initializing fragment-to-contig distribution ...";
+        // Contig picker.
         contigPicker.numHaplotypes = vcfMat.numHaplotypes;
         contigPicker.lengthSums.clear();
         for (unsigned i = 0; i < numSeqs(vcfMat.faiIndex); ++i)
         {
-            contigPicker.contigLengths.push_back(sequenceLength(vcfMat.faiIndex, i));
+            contigPicker.lengthSums.push_back(sequenceLength(vcfMat.faiIndex, i));
             if (i > 0u)
-                contigPicker[i] += contigPicker[i - 1];
+                contigPicker.lengthSums[i] += contigPicker.lengthSums[i - 1];
         }
+        // Fragment id splitter.
+        fragmentIdSplitter.numContigs = numSeqs(vcfMat.faiIndex) * vcfMat.numHaplotypes;
+        fragmentIdSplitter.open();
+        // Splitter for sequence.
+        fragmentSplitter.numContigs = fragmentIdSplitter.numContigs;
+        fragmentSplitter.open();
+        std::cerr << " OK\n";
 
         // Configure fragment splitter and joiner.
-        fragmentIdSplitter.numContigs = numSeqs(vcfMat.faiIndex);
-        fragmentSplitter.numContigs = fragmentIdSplitter.numContigs;
-        fragmentJoiner.splitter = &fragmentSplitter;
-        fragmentJoiner.init();
+        // fragmentJoiner.splitter = &fragmentSplitter;
+        // fragmentJoiner.init();
 
-        // Initialize seqSimulator.
-        */
+        // Initialize simulation threads.
+        std::cerr << "Initializing simulation threads ...";
+        threads.resize(options.numThreads);
+        for (int i = 0; i < options.numThreads; ++i)
+            threads[i].init(options.seed + i * options.seedSpacing, options);
+        std::cerr << " OK\n";
+
+        // Open output files.
+        std::cerr << "Opening output file " << options.outFileNameLeft << " ...";
+        open(outSeqsLeft, toCString(options.outFileNameLeft), seqan::SequenceStream::WRITE);
+        if (!isGood(outSeqsLeft))
+            throw MasonIOException("Could not open left/single-end output file.");
+        std::cerr << " OK\n";
+
+        if (!empty(options.outFileNameRight))
+        {
+            std::cerr << "Opening output file " << options.outFileNameRight << " ...";
+            open(outSeqsRight, toCString(options.outFileNameRight), seqan::SequenceStream::WRITE);
+            if (!isGood(outSeqsRight))
+                throw MasonIOException("Could not open right/single-end output file.");
+            std::cerr << " OK\n";
+        }
+
+        if (!empty(options.outFileNameSam))
+        {
+            std::cerr << "Opening output file " << options.outFileNameSam << "...";
+            open(outBamStream, toCString(options.outFileNameSam), seqan::BamStream::WRITE);
+            if (!isGood(outBamStream))
+                throw MasonIOException("Could not open SAM/BAM output file.");
+            std::cerr << " OK\n";
+        }
     }
 
     void _printHeader()
     {
         std::cerr << "MASON SIMULATOR\n"
-                  << "===============\n"
-                  << "\n";
-        options.print(std::cerr);
+                  << "===============\n";
+        if (options.verbosity >= 2)
+        {
+            std::cerr << "\n";
+            options.print(std::cerr);
+        }
     }
 };
 
@@ -220,11 +383,11 @@ parseCommandLine(MasonSimulatorOptions & options, int argc, char const ** argv)
 
     // Define usage line and long description.
     addUsageLine(parser,
-                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP [\\fB-iv\\fP \\fIIN.vcf\\fP] \\fB-o\\fP \\fILEFT.fq\\fP "
+                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-n\\fP \\fINUM\\fP [\\fB-iv\\fP \\fIIN.vcf\\fP] \\fB-o\\fP \\fILEFT.fq\\fP "
                  "[\\fB-or\\fP \\fIRIGHT.fq\\fP]");
     addDescription(parser,
-                   "Simulate reads from the reference sequence \\fIIN.fa\\fP, potentially with variants "
-                   "from \\fIIN.vcf\\fP.  In case that both \\fB-o\\fP and \\fB-or\\fP are given, write out "
+                   "Simulate \\fINUM\\fP reads/pairs from the reference sequence \\fIIN.fa\\fP, potentially with "
+                   "variants from \\fIIN.vcf\\fP.  In case that both \\fB-o\\fP and \\fB-or\\fP are given, write out "
                    "paired-end data, if only \\fB-io\\fP is given, only single-end reads are simulated.");
 
     // Add option and text sections.

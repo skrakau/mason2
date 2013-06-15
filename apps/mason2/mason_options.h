@@ -517,6 +517,17 @@ struct MasonSimulatorOptions
     int seedSpacing;
     // The number of threads to use for the simulation.
     int numThreads;
+    // Number of reads/pairs to simulate in one chunk
+    int chunkSize;
+    // TODO(holtgrew): Make configurable from the command line.
+
+    // Number of reads/pairs to simulate.
+    int numFragments;
+
+    // Path to output sequence files for left (and single end) and right reads.
+    seqan::CharString outFileNameLeft, outFileNameRight;
+    // Path to output SAM file.
+    seqan::CharString outFileNameSam;
 
     // Configuration for the reading of the reference and application of the variants from the VCF file.
     MaterializerOptions matOptions;
@@ -533,10 +544,8 @@ struct MasonSimulatorOptions
     // Configuration of the Roche 454 read simulation.
     Roche454SequencingOptions rocheOptions;
 
-    // Path to output sequence files for left (and single end) and right reads.
-    seqan::CharString outFileNameLeft, outFileNameRight;
-
-    MasonSimulatorOptions() : verbosity(0), seed(0), seedSpacing(2048), numThreads(1)
+    MasonSimulatorOptions() :
+            verbosity(0), seed(0), seedSpacing(2048), numThreads(1), chunkSize(64*1024), numFragments(0)
     {}
 
     // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.
@@ -1404,6 +1413,11 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     setMinValue(parser, "num-threads", "1");
     setDefaultValue(parser, "num-threads", "1");
 
+    addOption(parser, seqan::ArgParseOption("n", "num-fragments", "Number of reads/pairs to simulate.",
+                                            seqan::ArgParseOption::INTEGER, "NUM"));
+    setRequired(parser, "num-fragments");
+    setMinValue(parser, "num-fragments", "1");
+
     addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
                                             seqan::ArgParseOption::OUTPUTFILE, "OUT"));
     setRequired(parser, "out");
@@ -1412,6 +1426,10 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("or", "out-right", "Output of right reads.  Giving this options enables "
                                             "paired-end simulation.", seqan::ArgParseOption::OUTPUTFILE, "OUT2"));
     setValidValues(parser, "out-right", "fa fasta fq fastq");
+
+    addOption(parser, seqan::ArgParseOption("oa", "out-alignment", "SAM/BAM file with alignments.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
+    setValidValues(parser, "out-alignment", "sam bam");
 
     // Add options of the component options.
     matOptions.addOptions(parser);
@@ -1478,8 +1496,10 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     getOptionValue(seed, parser, "seed");
     getOptionValue(seedSpacing, parser, "seed-spacing");
     getOptionValue(numThreads, parser, "num-threads");
+    getOptionValue(numFragments, parser, "num-fragments");
     getOptionValue(outFileNameLeft, parser, "out");
     getOptionValue(outFileNameRight, parser, "out-right");
+    getOptionValue(outFileNameSam, parser, "out-alignment");
 
     // Get options for the other components that we use.
     matOptions.getOptionValues(parser);
@@ -1515,6 +1535,8 @@ void MasonSimulatorOptions::print(std::ostream & out) const
         << "\n"
         << "SEED\t" << seed << "\n"
         << "SEED SPACING\t" << seedSpacing << "\n"
+        << "\n"
+        << "NUM FRAGMENTS\t" << numFragments << "\n"
         << "\n"
         << "NUM THREADS\t" << numThreads << "\n"
         << "\n"

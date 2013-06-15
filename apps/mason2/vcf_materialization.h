@@ -95,7 +95,7 @@ public:
     // The current VCF record.  rID == INVALID_REFID if invalid, used for termination.
     seqan::VcfRecord vcfRecord;
 
-    VcfMaterializer() : currRID(0), nextHaplotype(0), numHaplotypes(0)
+    VcfMaterializer() : currRID(-1), nextHaplotype(0), numHaplotypes(0)
     {}
 
     VcfMaterializer(char const * fastaFileName, char const * vcfFileName) :
@@ -260,24 +260,31 @@ std::pair<seqan::CharString, int> getTargetPos(seqan::CharString const & str)
 
 void VcfMaterializer::init()
 {
-    // Open VCF stream.
-    open(vcfStream, toCString(vcfFileName));
-    if (!isGood(vcfStream))
-        throw MasonIOException("Could not open VCF stream.");
-
-    // Read first VCF record.
-    if (!atEnd(vcfStream) && readRecord(vcfRecord, vcfStream) != 0)
-        throw MasonIOException("Problem reading from VCF file.");
-
-    // Get number of haplotypes in VCF file.
-    SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
-    seqan::StringSet<seqan::CharString> xs;
-    seqan::RecordReader<seqan::CharString, seqan::SinglePass<seqan::StringReader> >
-            reader(vcfRecord.genotypeInfos[0]);
-    numHaplotypes = 1;
-    for (; !atEnd(reader); goNext(reader))
-        numHaplotypes += (value(reader) == '|' || value(reader) == '/');
-
+    if (!empty(vcfFileName))
+    {
+        // Open VCF stream.
+        open(vcfStream, toCString(vcfFileName));
+        if (!isGood(vcfStream))
+            throw MasonIOException("Could not open VCF stream.");
+        
+        // Read first VCF record.
+        if (!atEnd(vcfStream) && readRecord(vcfRecord, vcfStream) != 0)
+            throw MasonIOException("Problem reading from VCF file.");
+        
+        // Get number of haplotypes in VCF file.
+        SEQAN_ASSERT_NOT(empty(vcfRecord.genotypeInfos));
+        seqan::StringSet<seqan::CharString> xs;
+        seqan::RecordReader<seqan::CharString, seqan::SinglePass<seqan::StringReader> >
+                reader(vcfRecord.genotypeInfos[0]);
+        numHaplotypes = 1;
+        for (; !atEnd(reader); goNext(reader))
+            numHaplotypes += (value(reader) == '|' || value(reader) == '/');
+    }
+    else
+    {
+        numHaplotypes = 1;
+    }
+        
     // Open input FASTA file and FAI.
     if (read(faiIndex, toCString(fastaFileName)) != 0)
     {
@@ -297,6 +304,17 @@ void VcfMaterializer::init()
 
 bool VcfMaterializer::materializeNext(seqan::Dna5String & seq, int & rID, int & haplotype)
 {
+    if (empty(vcfFileName))
+    {
+        if (currRID >= (int)(numSeqs(faiIndex) - 1))
+            return false;
+        currRID += 1;
+        rID = currRID;
+        if (readSequence(seq, faiIndex, currRID) != 0)
+            throw MasonIOException("Could not load reference sequence.");
+        return true;
+    }
+
     // Number of sequences.
     int numSeqs = length(vcfStream.header.sequenceNames);
 
