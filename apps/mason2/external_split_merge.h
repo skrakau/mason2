@@ -253,6 +253,7 @@ bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
     return false;
 }
 
+#if 0
 class SamJoiner
 {
 public:
@@ -348,6 +349,7 @@ public:
         return 0;
     }
 };
+#endif
 
 // ============================================================================
 // Metafunctions

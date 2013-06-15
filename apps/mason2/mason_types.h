@@ -37,6 +37,7 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_MASON_TYPES_H_
 #define SANDBOX_MASON2_APPS_MASON2_MASON_TYPES_H_
 
+#include <stdexcept>
 #include <seqan/random.h>
 
 // ============================================================================

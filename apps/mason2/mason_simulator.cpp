@@ -37,6 +37,7 @@
 #include <vector>
 #include <utility>
 
+#include "mason_options.h"
 #include "mason_types.h"
 #include "vcf_materialization.h"
 #include "external_split_merge.h"
@@ -64,7 +65,7 @@ public:
     // The number of haplotypes.
     int numHaplotypes;
     
-    ContigPicker(TRng & rng)
+    ContigPicker(TRng & rng) : rng(rng)
     {}
 
     // Return a position (contig, haplotype) to distribute the read to.
@@ -99,20 +100,6 @@ public:
 };
 
 // --------------------------------------------------------------------------
-// Class MasonSimulatorOptions
-// --------------------------------------------------------------------------
-
-struct MasonSimulatorOptions
-{
-    // The seed to use for the random number generation.
-    int seed;
-
-    MasonSimulatorOptions() :
-            seed(0)
-    {}
-};
-
-// --------------------------------------------------------------------------
 // Class MasonSimulatorApp
 // --------------------------------------------------------------------------
 
@@ -123,7 +110,7 @@ public:
     MasonSimulatorOptions options;
 
     // The random number generator to use for the simulation.
-    TRng & rng;
+    TRng rng;
 
     // ----------------------------------------------------------------------
     // VCF Materialization
@@ -137,44 +124,50 @@ public:
     // ----------------------------------------------------------------------
 
     // Helper for distributing reads/pairs to contigs/haplotypes.
-    ContigPicker contigPicker.
+    ContigPicker contigPicker;
     // Helper for storing the read ids for each contig/haplotype pair.
     IdSplitter fragmentIdSplitter;
     // Helper for storing the simulated reads for each contig/haplotype pair.  We will write out SAM files with the
     // alignment information relative to the materialized sequence.
     IdSplitter fragmentSplitter;
     // Helper for joining the SAM files.
-    SamJoiner fragmentJoiner;
+    // SamJoiner fragmentJoiner;
 
     // ----------------------------------------------------------------------
     // Fragment and Read Simulation
     // ----------------------------------------------------------------------
 
     // Generation of infixes on the genome.
-    FragmentGenerator fragGenerator;
+    // FragmentGenerator fragGenerator;
     // Sequencing of reads from given fragments.
-    std::auto_ptr<SequencingSimulator> seqSimulator;
+    // std::auto_ptr<SequencingSimulator> seqSimulator;
 
     // ----------------------------------------------------------------------
     // File Output
     // ----------------------------------------------------------------------
 
     // For writing left/right reads.
-    seqan::SequenceStream outSeqsLeft, outSeqsRight;
+    // seqan::SequenceStream outSeqsLeft, outSeqsRight;
     // For writing the final SAM/BAM file.
-    seqan::BamStream outBamStream;
+    // seqan::BamStream outBamStream;
 
-    MasonSimulatorApp(MasonSimulatorOptions const & options) : options(options)
+    MasonSimulatorApp(MasonSimulatorOptions const & options) :
+            options(options), rng(options.seed), contigPicker(rng)
     {}
 
     int run()
     {
         // Initialize.
         _init();
+
+        // Print the header and the options.
+        _printHeader();
+        return 0;
     }
 
     void _init()
     {
+        /*
         // Initialize VCF materialization (reference FASTA and input VCF).
         vcfMat.init();
 
@@ -195,12 +188,60 @@ public:
         fragmentJoiner.init();
 
         // Initialize seqSimulator.
+        */
+    }
+
+    void _printHeader()
+    {
+        std::cerr << "MASON SIMULATOR\n"
+                  << "===============\n"
+                  << "\n";
+        options.print(std::cerr);
     }
 };
 
 // ==========================================================================
 // Functions
 // ==========================================================================
+
+// --------------------------------------------------------------------------
+// Function parseCommandLine()
+// --------------------------------------------------------------------------
+
+seqan::ArgumentParser::ParseResult
+parseCommandLine(MasonSimulatorOptions & options, int argc, char const ** argv)
+{
+    // Setup ArgumentParser.
+    seqan::ArgumentParser parser("mason_simulator");
+    // Set short description, version, and date.
+    setShortDescription(parser, "Read Simulation");
+    setVersion(parser, "2.0");
+    setDate(parser, "July 2012");
+
+    // Define usage line and long description.
+    addUsageLine(parser,
+                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP [\\fB-iv\\fP \\fIIN.vcf\\fP] \\fB-o\\fP \\fILEFT.fq\\fP "
+                 "[\\fB-or\\fP \\fIRIGHT.fq\\fP]");
+    addDescription(parser,
+                   "Simulate reads from the reference sequence \\fIIN.fa\\fP, potentially with variants "
+                   "from \\fIIN.vcf\\fP.  In case that both \\fB-o\\fP and \\fB-or\\fP are given, write out "
+                   "paired-end data, if only \\fB-io\\fP is given, only single-end reads are simulated.");
+
+    // Add option and text sections.
+    options.addOptions(parser);
+    options.addTextSections(parser);
+    
+    // Parse command line.
+    seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
+
+    // Only extract  options if the program will continue after parseCommandLine()
+    if (res != seqan::ArgumentParser::PARSE_OK)
+        return res;
+
+    options.getOptionValues(parser);
+
+    return seqan::ArgumentParser::PARSE_OK;
+}
 
 // --------------------------------------------------------------------------
 // Function main()
@@ -210,6 +251,9 @@ int main(int argc, char const ** argv)
 {
     // Parse options.
     MasonSimulatorOptions options;
+    seqan::ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
+    if (res != seqan::ArgumentParser::PARSE_OK)
+        return res == seqan::ArgumentParser::PARSE_ERROR;
 
     // Initialize Global State
     //

@@ -78,9 +78,6 @@ struct MaterializerOptions
     // Path to VCF file.  No variation is applied if empty.
     seqan::CharString vcfFileName;
 
-    // Path to output sequence files for left (and single end) and right reads.
-    seqan::CharString outFileNameLeft, outFileNameRight;
-
     MaterializerOptions() : verbosity(0)
     {}
 
@@ -88,10 +85,13 @@ struct MaterializerOptions
     void addOptions(seqan::ArgumentParser & parser) const;
 
     // Add possible text sections to the argument parser.
-    void addTextSection(seqan::ArgumentParser & parser) const;
+    void addTextSections(seqan::ArgumentParser & parser) const;
 
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -125,7 +125,7 @@ struct FragmentSamplerOptions
     // The model to use for the fragment size.
     FragmentSizeModel model;
 
-    FragmentOptions() :
+    FragmentSamplerOptions() :
             verbosity(0), minFragmentSize(0), maxFragmentSize(0), meanFragmentSize(0), stdDevFragmentSize(0),
             model(UNIFORM)
     {}
@@ -134,10 +134,13 @@ struct FragmentSamplerOptions
     void addOptions(seqan::ArgumentParser & parser) const;
 
     // Add possible text sections to the argument parser.
-    void addTextSection(seqan::ArgumentParser & parser) const;
+    void addTextSections(seqan::ArgumentParser & parser) const;
 
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -179,9 +182,6 @@ struct SequencingOptions
         SANGER
     };
 
-    // Verbosity level.
-    int verbosity;
-
     // Whether or not to simulate qualities.
     bool simulateQualities;
     // Whether or not to simulate mate pairs.
@@ -201,8 +201,14 @@ struct SequencingOptions
     // Add options to the argument parser.
     void addOptions(seqan::ArgumentParser & parser) const;
 
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -304,8 +310,14 @@ struct IlluminaSequencingOptions
     // Add options to the argument parser.
     void addOptions(seqan::ArgumentParser & parser) const;
 
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -393,8 +405,14 @@ struct SangerSequencingOptions
     // Add options to the argument parser.
     void addOptions(seqan::ArgumentParser & parser) const;
 
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -410,7 +428,7 @@ struct Roche454SequencingOptions
     // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
 
-    // The default orientation for Illumina paired-end reads.
+    // The default orientation for Roche 454 paired-end reads.
     SequencingOptions::MateOrientation defaultOrientation;
 
     // Enum for selecting the read length model.
@@ -465,8 +483,14 @@ struct Roche454SequencingOptions
     // Add options to the argument parser.
     void addOptions(seqan::ArgumentParser & parser) const;
 
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
     // Get option values from the argument parser.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ----------------------------------------------------------------------------
@@ -509,6 +533,9 @@ struct MasonSimulatorOptions
     // Configuration of the Roche 454 read simulation.
     Roche454SequencingOptions rocheOptions;
 
+    // Path to output sequence files for left (and single end) and right reads.
+    seqan::CharString outFileNameLeft, outFileNameRight;
+
     MasonSimulatorOptions() : verbosity(0), seed(0), seedSpacing(2048), numThreads(1)
     {}
 
@@ -516,10 +543,13 @@ struct MasonSimulatorOptions
     void addOptions(seqan::ArgumentParser & parser) const;
 
     // Add possible text sections to the argument parser, calls addTextSections() on *Options objects.
-    void addTextSection(seqan::ArgumentParser & parser) const;
+    void addTextSections(seqan::ArgumentParser & parser) const;
 
     // Get option values from the argument parser.  Calls getOptionValues() on the nested *Option objects.
     void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
 };
 
 // ============================================================================
@@ -529,6 +559,119 @@ struct MasonSimulatorOptions
 // ============================================================================
 // Functions
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Function getYesNoStr()
+// ----------------------------------------------------------------------------
+
+char const * getYesNoStr(bool b)
+{
+    return b ? "YES" : "NO";
+}
+
+// ----------------------------------------------------------------------------
+// Function getVerbosityStr()
+// ----------------------------------------------------------------------------
+
+char const * getVerbosityStr(int verbosity)
+{
+    switch (verbosity)
+    {
+        case 0:
+            return "QUIET";
+        case 1:
+            return "NORMAL";
+        case 2:
+            return "VERBOSE";
+        case 3:
+            return "VERY VERBOSE";
+        default:
+            return "<invalid>";
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function getFragmentSizeModelStr()
+// ----------------------------------------------------------------------------
+
+char const * getFragmentSizeModelStr(FragmentSamplerOptions::FragmentSizeModel model)
+{
+    switch (model)
+    {
+        case FragmentSamplerOptions::UNIFORM:
+            return "UNIFORM";
+        case FragmentSamplerOptions::NORMAL:
+            return "NORMAL";
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function getMateOrientationStr()
+// ----------------------------------------------------------------------------
+
+char const * getMateOrientationStr(SequencingOptions::MateOrientation orientation)
+{
+    switch (orientation)
+    {
+        case SequencingOptions::FORWARD_REVERSE:
+            return "FORWARD-REVERSE (R1 --> <-- R2)";
+        case SequencingOptions::REVERSE_FORWARD:
+            return "REVERSE-FORWARD (R1 <-- --> R2)";
+        case SequencingOptions::FORWARD_FORWARD:
+            return "FORWARD-FORWARD (R1 --> --> R2)";
+        case SequencingOptions::FORWARD_FORWARD2:
+            return "FORWARD-FORWARD2 (R2 --> --> R1)";
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function getSourceStrandsStr()
+// ----------------------------------------------------------------------------
+
+char const * getSourceStrandsStr(SequencingOptions::SourceStrands strands)
+{
+    switch (strands)
+    {
+        case SequencingOptions::BOTH:
+            return "BOTH";
+        case SequencingOptions::FORWARD:
+            return "FORWARD";
+        case SequencingOptions::REVERSE:
+            return "REVERSE";
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function getSequencingTechnologyStr()
+// ----------------------------------------------------------------------------
+
+char const * getSequencingTechnologyStr(SequencingOptions::SequencingTechnology technology)
+{
+    switch (technology)
+    {
+        case SequencingOptions::ILLUMINA:
+            return "ILLUMINA";
+        case SequencingOptions::ROCHE_454:
+            return "ROCHE 454";
+        case SequencingOptions::SANGER:
+            return "SANGER";
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function getFragmentSizeModelStr()
+// ----------------------------------------------------------------------------
+
+char const * getFragmentSizeModelStr(Roche454SequencingOptions::ReadLengthModel model)
+{
+    switch (model)
+    {
+        case Roche454SequencingOptions::UNIFORM:
+            return "UNIFORM";
+        case Roche454SequencingOptions::NORMAL:
+            return "NORMAL";
+    }
+}
 
 // ----------------------------------------------------------------------------
 // Function MaterializerOptions::addOptions()
@@ -545,7 +688,7 @@ void MaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
 
     addOption(parser, seqan::ArgParseOption("iv", "input-vcf", "Path to the VCF file with variants to apply.",
                                             seqan::ArgParseOption::STRING, "IN.vcf"));
-    setValidValues(parser, "input-vcf");
+    setValidValues(parser, "input-vcf", "vcf");
 }
 
 // ----------------------------------------------------------------------------
@@ -576,6 +719,18 @@ void MaterializerOptions::getOptionValues(seqan::ArgumentParser const & parser)
 {
     getOptionValue(fastaFileName, parser, "input-reference");
     getOptionValue(vcfFileName, parser, "input-vcf");
+}
+
+// ----------------------------------------------------------------------------
+// Function MaterializerOptions::print()
+// ----------------------------------------------------------------------------
+
+void MaterializerOptions::print(std::ostream & out) const
+{
+    out << "MATERIALIZER OPTIONS\n"
+        << "  VERBOSITY      \t" << getVerbosityStr(verbosity) << "\n"
+        << "  REFERENCE FASTA\t" << fastaFileName << "\n"
+        << "  VARIANTS VCF   \t" << vcfFileName << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -638,15 +793,26 @@ void FragmentSamplerOptions::getOptionValues(seqan::ArgumentParser const & parse
 {
     seqan::CharString tmp;
     getOptionValue(tmp, parser, "fragment-size-model");
-    if (tmp == "normal")
-        fragSamplerOptions.model = FragmentSamplerOptions::NORMAL;
-    else
-        fragSamplerOptions.model = FragmentSamplerOptions::UNIFORM;
+    model = (tmp == "normal") ? FragmentSamplerOptions::NORMAL : FragmentSamplerOptions::UNIFORM;
 
-    getOptionValue(fragSamplerOptions.minFragmentSize, parser, "fragment-min-size");
-    getOptionValue(fragSamplerOptions.maxFragmentSize, parser, "fragment-max-size");
-    getOptionValue(fragSamplerOptions.meanFragmentSize, parser, "fragment-mean-size");
-    getOptionValue(fragSamplerOptions.stdDevFragmentSize, parser, "fragment-size-std-dev");
+    getOptionValue(minFragmentSize, parser, "fragment-min-size");
+    getOptionValue(maxFragmentSize, parser, "fragment-max-size");
+    getOptionValue(meanFragmentSize, parser, "fragment-mean-size");
+    getOptionValue(stdDevFragmentSize, parser, "fragment-size-std-dev");
+}
+
+// ----------------------------------------------------------------------------
+// Function FragmentSamplerOptions::print()
+// ----------------------------------------------------------------------------
+
+void FragmentSamplerOptions::print(std::ostream & out) const
+{
+    out << "FRAGMENT SAMPLING\n"
+        << "  SIZE MODEL     \t" << getFragmentSizeModelStr(model) << "\n"
+        << "  MIN SIZE       \t" << minFragmentSize << "\n"
+        << "  MAX SIZE       \t" << maxFragmentSize << "\n"
+        << "  MEAN SIZE      \t" << meanFragmentSize << "\n"
+        << "  STD DEV SIZE   \t" << stdDevFragmentSize << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -716,7 +882,7 @@ void SequencingOptions::getOptionValues(seqan::ArgumentParser const & parser)
     else if (tmp == "FF")
         mateOrientation = FORWARD_FORWARD;
     else if (tmp == "FF2")
-        mateOrientaiton = FORWARD_FORWARD2;
+        mateOrientation = FORWARD_FORWARD2;
 
     getOptionValue(tmp, parser, "seq-strands");
     if (tmp == "forward")
@@ -733,6 +899,20 @@ void SequencingOptions::getOptionValues(seqan::ArgumentParser const & parser)
         sequencingTechnology = SequencingOptions::ROCHE_454;
     else
         sequencingTechnology = SequencingOptions::SANGER;
+}
+
+// ----------------------------------------------------------------------------
+// Function SequencingOptions::print()
+// ----------------------------------------------------------------------------
+
+void SequencingOptions::print(std::ostream & out) const
+{
+    out << "SEQUENCING\n"
+        << "  SIMULATE QUALITIES \t" << getYesNoStr(simulateQualities) << "\n"
+        << "  SIMULATE MATE PAIRS\t" << getYesNoStr(simulateMatePairs) << "\n"
+        << "  MATE ORIENTATION   \t" << getMateOrientationStr(mateOrientation) << "\n"
+        << "  SOURCE STRANDS     \t" << getSourceStrandsStr(strands) << "\n"
+        << "  SEQUENCING TECH    \t" << getSequencingTechnologyStr(sequencingTechnology) << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -848,7 +1028,7 @@ void IlluminaSequencingOptions::addOptions(seqan::ArgumentParser & parser) const
 // Function IlluminaSequencingOptions::addTextSections()
 // ----------------------------------------------------------------------------
 
-void IlluminaSequencingOptions::addTextSections(seqan::ArgumentParser & parser) const
+void IlluminaSequencingOptions::addTextSections(seqan::ArgumentParser & /*parser*/) const
 {}
 
 // ----------------------------------------------------------------------------
@@ -880,6 +1060,35 @@ void IlluminaSequencingOptions::getOptionValues(seqan::ArgumentParser const & pa
     getOptionValue(meanMismatchQualityEnd, parser, "illumina-mismatch-quality-mean-end");
     getOptionValue(stdDevMismatchQualityBegin, parser, "illumina-mismatch-quality-stddev-begin");
     getOptionValue(stdDevMismatchQualityEnd, parser, "illumina-mismatch-quality-stddev-end");
+}
+// ----------------------------------------------------------------------------
+// Function IlluminaSequencingOptions::print()
+// ----------------------------------------------------------------------------
+
+void IlluminaSequencingOptions::print(std::ostream & out) const
+{
+    out << "ILLUMINA SEQUENCING\n"
+        << "  READ LENGTH                  \t" << readLength << "\n"
+        << "  ERROR PROFILE FILE           \t" << probabilityMismatchFile << "\n"
+        << "\n"
+        << "  PROBABILITY INSERT           \t" << probabilityInsert << "\n"
+        << "  PROBABILITY DELETE           \t" << probabilityDelete << "\n"
+        << "\n"
+        << "  PROBABILITY MISMATCH SCALE   \t" << probabilityMismatchScale << "\n"
+        << "  PROBABILITY MISMATCH AVG     \t" << probabilityMismatch << "\n"
+        << "  PROBABILITY MISMATCH BEGIN   \t" << probabilityMismatchBegin << "\n"
+        << "  PROBABILITY MISMATCH END     \t" << probabilityMismatchEnd << "\n"
+        << "  MISMATCH RAISE POINT         \t" << positionRaise << "\n"
+        << "\n"
+        << "  MEAN QUALITY BEGIN           \t" << meanQualityBegin << "\n"
+        << "  MEAN QUALITY END             \t" << meanQualityEnd << "\n"
+        << "  STD DEV QUALITY BEGIN        \t" << stdDevQualityBegin << "\n"
+        << "  STD DEV QUALITY END          \t" << stdDevQualityEnd << "\n"
+        << "\n"
+        << "  MEAN MISMATCH QUALITY BEGIN  \t" << meanMismatchQualityBegin << "\n"
+        << "  MEAN MISMATCH QUALITY END    \t" << meanMismatchQualityEnd << "\n"
+        << "  STDDEV MISMATCH QUALITY BEGIN\t" << stdDevMismatchQualityBegin << "\n"
+        << "  STDDEV MISMATCH QUALITY END  \t" << stdDevMismatchQualityEnd << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -1008,7 +1217,7 @@ void SangerSequencingOptions::addOptions(seqan::ArgumentParser & parser) const
 // Function SangerSequencingOptions::addTextSections()
 // ----------------------------------------------------------------------------
 
-void SangerSequencingOptions::addTextSections(seqan::ArgumentParser & parser) const
+void SangerSequencingOptions::addTextSections(seqan::ArgumentParser & /*parser*/) const
 {}
 
 // ----------------------------------------------------------------------------
@@ -1041,6 +1250,37 @@ void SangerSequencingOptions::getOptionValues(seqan::ArgumentParser const & pars
     getOptionValue(qualityErrorEndMean, parser, "sanger-quality-error-end-mean");
     getOptionValue(qualityErrorStartStdDev, parser, "sanger-quality-error-start-stddev");
     getOptionValue(qualityErrorEndStdDev, parser, "sanger-quality-error-end-stddev");
+}
+
+// ----------------------------------------------------------------------------
+// Function SangerSequencingOptions::print()
+// ----------------------------------------------------------------------------
+
+void SangerSequencingOptions::print(std::ostream & out) const
+{
+    out << "SANGER SEQUENCING\n"
+        << "  UNIFORM READ LENGTH       \t" << getYesNoStr(readLengthIsUniform) << "\n"
+        << "  READ LENGTH MEAN          \t" << readLengthMean << "\n"
+        << "  READ LENGTH ERROR         \t" << readLengthError << "\n"
+        << "  READ LENGTH MIN           \t" << readLengthMin << "\n"
+        << "  READ LENGTH MAX           \t" << readLengthMax << "\n"
+        << "\n"
+        << "  PROBABILITY MISMATCH BEGIN\t" << probabilityMismatchBegin << "\n"
+        << "  PROBABILITY MISMATCH END  \t" << probabilityMismatchEnd << "\n"
+        << "  PROBABILITY INSERT BEGIN  \t" << probabilityInsertBegin << "\n"
+        << "  PROBABILITY INSERT END    \t" << probabilityInsertEnd << "\n"
+        << "  PROBABILITY DELETE BEGIN  \t" << probabilityDeleteBegin << "\n"
+        << "  PROBABILITY DELETE END    \t" << probabilityDeleteEnd << "\n"
+        << "\n"
+        << "  QUALITY MATCH START MEAN  \t" << qualityMatchStartMean << "\n"
+        << "  QUALITY MATCH END MEAN    \t" << qualityMatchEndMean << "\n"
+        << "  QUALITY MATCH START STDDEV\t" << qualityMatchStartStdDev << "\n"
+        << "  QUALITY MATCH END STDDEV  \t" << qualityMatchEndStdDev << "\n"
+        << "\n"
+        << "  QUALITY ERROR START MEAN  \t" << qualityErrorStartMean << "\n"
+        << "  QUALITY ERROR END MEAN    \t" << qualityErrorEndMean << "\n"
+        << "  QUALITY ERROR START STDDEV\t" << qualityErrorStartStdDev << "\n"
+        << "  QUALITY ERROR END STDDEV  \t" << qualityErrorEndStdDev << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -1102,7 +1342,7 @@ void Roche454SequencingOptions::addOptions(seqan::ArgumentParser & parser) const
 // Function Roche454SequencingOptions::addTextSections()
 // ----------------------------------------------------------------------------
 
-void Roche454SequencingOptions::addTextSections(seqan::ArgumentParser & parser) const
+void Roche454SequencingOptions::addTextSections(seqan::ArgumentParser & /*parser*/) const
 {}
 
 // ----------------------------------------------------------------------------
@@ -1126,6 +1366,20 @@ void Roche454SequencingOptions::getOptionValues(seqan::ArgumentParser const & pa
 }
 
 // ----------------------------------------------------------------------------
+// Function Roche454SequencingOptions::print()
+// ----------------------------------------------------------------------------
+
+void Roche454SequencingOptions::print(std::ostream & out) const
+{
+    out << "ROCHE 454 SEQUENCING\n"
+        << "  READ LENGTH MODEL \t" << getFragmentSizeModelStr(lengthModel) << "\n"
+        << "  MIN READ LENGTH   \t" << minReadLength << "\n"
+        << "  MAX READ LENGTH   \t" << maxReadLength << "\n"
+        << "  MEAN READ LENGTH  \t" << meanReadLength << "\n"
+        << "  STDDEV READ LENGTH\t" << stdDevReadLength << "\n";
+}
+
+// ----------------------------------------------------------------------------
 // Function MasonSimulatorOptions::addOptions()
 // ----------------------------------------------------------------------------
 
@@ -1138,7 +1392,7 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
 
     addOption(parser, seqan::ArgParseOption("", "seed", "Seed to use for random number generator.",
-                                            seqan::ArgParseOptions::INTEGER, "NUM"));
+                                            seqan::ArgParseOption::INTEGER, "NUM"));
     setDefaultValue(parser, "seed", "0");
 
     addOption(parser, seqan::ArgParseOption("", "seed-spacing", "Offset for seeds to use when multi-threading.",
@@ -1151,13 +1405,12 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     setDefaultValue(parser, "num-threads", "1");
 
     addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
-                                            seqan::ArgParseOption::OUTFILE, "OUT"));
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
     setRequired(parser, "out");
     setValidValues(parser, "out", "fa fasta fq fastq");
 
     addOption(parser, seqan::ArgParseOption("or", "out-right", "Output of right reads.  Giving this options enables "
-                                            "paired-end simulation.", seqan::ArgParseOption::OUTFILE, "OUT2"));
-    setRequired(parser, "out-right");
+                                            "paired-end simulation.", seqan::ArgParseOption::OUTPUTFILE, "OUT2"));
     setValidValues(parser, "out-right", "fa fasta fq fastq");
 
     // Add options of the component options.
@@ -1198,7 +1451,7 @@ void MasonSimulatorOptions::addTextSections(seqan::ArgumentParser & parser) cons
 
     addText(parser,
             "When using multi-threading, each thread gets its own random number generator (RNG).  The RNG of thread "
-            "i is initialized with the value of \\fB--seed\\fP plus i."):
+            "i is initialized with the value of \\fB--seed\\fP plus i.");
 
     // Add text sections of the component options.
     matOptions.addTextSections(parser);
@@ -1216,10 +1469,17 @@ void MasonSimulatorOptions::addTextSections(seqan::ArgumentParser & parser) cons
 void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser)
 {
     // Get top-level options.
-    getOptionValues(verbosity, parser, "verbosity");
-    getOptionValues(seed, parser, "seed");
-    getOptionValues(seedSpacing, parser, "seed-spacing");
-    getOptionValues(numThreads, parser, "num-threads");
+    if (isSet(parser, "quiet"))
+        verbosity = 0;
+    if (isSet(parser, "verbose"))
+        verbosity = 2;
+    if (isSet(parser, "very-verbose"))
+        verbosity = 3;
+    getOptionValue(seed, parser, "seed");
+    getOptionValue(seedSpacing, parser, "seed-spacing");
+    getOptionValue(numThreads, parser, "num-threads");
+    getOptionValue(outFileNameLeft, parser, "out");
+    getOptionValue(outFileNameRight, parser, "out-right");
 
     // Get options for the other components that we use.
     matOptions.getOptionValues(parser);
@@ -1240,6 +1500,38 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     // Configure simulation of pairs and mates depending on output files.
     seqOptions.simulateQualities = (endsWith(outFileNameLeft, ".fastq") || endsWith(outFileNameLeft, ".fq"));
     seqOptions.simulateMatePairs = !empty(outFileNameRight);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSimulatorOptions::print()
+// ----------------------------------------------------------------------------
+
+void MasonSimulatorOptions::print(std::ostream & out) const
+{
+    out << "MASON OPTIONS\n"
+        << "-------------\n"
+        << "\n"
+        << "VERBOSITY\t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "SEED\t" << seed << "\n"
+        << "SEED SPACING\t" << seedSpacing << "\n"
+        << "\n"
+        << "NUM THREADS\t" << numThreads << "\n"
+        << "\n"
+        << "OUTPUT FILE LEFT\t" << outFileNameLeft << "\n"
+        << "OUTPUT FILE RIGHT\t" << outFileNameRight << "\n"
+        << "\n";
+    matOptions.print(out);
+    out << "\n";
+    fragSamplerOptions.print(out);
+    out << "\n";
+    seqOptions.print(out);
+    out << "\n";
+    illuminaOptions.print(out);
+    out << "\n";
+    sangerOptions.print(out);
+    out << "\n";
+    rocheOptions.print(out);
 }
 
 #endif  // #ifndef SANDBOX_MASON2_APPS_MASON2_MASON_OPTIONS_H_
