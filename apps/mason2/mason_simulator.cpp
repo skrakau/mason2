@@ -34,9 +34,16 @@
 // Simulate sequencing process from a genome.
 // ==========================================================================
 
+// TODO(holtgrew): Next step, add sampling position to SequencingSimulationInfo and write out to temporary SAM.
+// TODO(holtgrew): Next step, join temporary SAM, fix SamJoiner for this.
+// TODO(holtgrew): Support using existing FASTQ files for error profiles/N patterns.
+// TODO(holtgrew): Translation from haplotype to reference contig.
+
 #include <vector>
 #include <utility>
 
+#include "fragment_generation.h"
+#include "sequencing.h"
 #include "mason_options.h"
 #include "mason_types.h"
 #include "vcf_materialization.h"
@@ -117,26 +124,119 @@ public:
     // The ids of the fragments.
     std::vector<int> fragmentIds;
 
-    // Buffer with ids and sequence of reads simulated in this thread.
-    seqan::StringSet<seqan::CharString, seqan::Owner<seqan::ConcatDirect<> > > ids;
-    seqan::StringSet<seqan::Dna5String, seqan::Owner<seqan::ConcatDirect<> > > seqs;
-    seqan::StringSet<seqan::CharString, seqan::Owner<seqan::ConcatDirect<> > > quals;
+    // The fragment generator and fragment buffer.
+    std::vector<Fragment> fragments;
+    FragmentSampler * fragSampler;
 
-    ReadSimulatorThread() : options()
+    // The sequencing simulator to use.
+    SequencingSimulator * seqSimulator;
+
+    // Buffer with ids and sequence of reads simulated in this thread.
+    seqan::StringSet<seqan::CharString> ids;
+    seqan::StringSet<seqan::Dna5String> seqs;
+    seqan::StringSet<seqan::CharString> quals;
+    std::vector<SequencingSimulationInfo> infos;
+    // Buffer for the BAM alignment records.
+    bool buildAlignments;  // Whether or not compute the BAM alignment records.
+    std::vector<seqan::BamAlignmentRecord> alignmentRecords;
+
+    ReadSimulatorThread() : options(), fragSampler(), seqSimulator(), buildAlignments(false)
     {}
+
+    ~ReadSimulatorThread()
+    {
+        delete fragSampler;
+        delete seqSimulator;
+    }
 
     void init(int seed, MasonSimulatorOptions const & newOptions)
     {
         reSeed(rng, seed);
         options = &newOptions;
+        buildAlignments = !empty(options->outFileNameSam);
+
+        // Initialize fragment generator here with reference to RNG and options.
+        fragSampler = new FragmentSampler(rng, options->fragSamplerOptions);
+
+        // Create sequencing simulator.
+        SequencingSimulatorFactory simFactory(rng, options->seqOptions, options->illuminaOptions,
+                                              options->rocheOptions, options->sangerOptions);
+        std::auto_ptr<SequencingSimulator> ptr = simFactory.make();
+        seqSimulator = ptr.release();
+    }
+
+    void _setId(seqan::CharString & str, std::stringstream & ss, int fragId, int num,
+                SequencingSimulationInfo const & info, bool forceNoEmbed = false)
+    {
+        ss.clear();
+        ss.str("");
+        ss << options->seqOptions.readNamePrefix;
+        if (num == 0)
+            ss << (fragId + 1);
+        else if (num == 1)
+            ss << (fragId + 1) << "/1";
+        else  // num == 2
+            ss << (fragId + 1) << "/2";
+        if (options->seqOptions.embedReadInfo && !forceNoEmbed)
+        {
+            ss << ' ';
+            info.serialize(ss);
+        }
+        str = ss.str();
     }
 
     // Simulate next chunk.
-    void run()
+    void run(seqan::Dna5String const & seq, int rID)
     {
-        clear(ids);
-        clear(seqs);
-        clear(quals);
+        // Sample fragments.
+        fragSampler->generateMany(fragments, rID, length(seq), fragmentIds.size());
+
+        // Simulate reads.
+        int seqCount = (options->seqOptions.simulateMatePairs ? 2 : 1) * fragmentIds.size();
+        resize(ids, seqCount);
+        resize(seqs, seqCount);
+        resize(quals, seqCount);
+        infos.resize(seqCount);
+        if (buildAlignments)
+            alignmentRecords.resize(seqCount);
+        std::stringstream ss;  // for conversion
+        // TODO(holtgrew): Optimize number of virtual function calls.
+        if (options->seqOptions.simulateMatePairs)
+            for (unsigned i = 0; i < 2 * fragmentIds.size(); i += 2)
+            {
+                TFragment frag(seq, fragments[i / 2].beginPos, fragments[i / 2].endPos);
+                seqSimulator->simulatePairedEnd(seqs[i], quals[i], infos[i],
+                                                seqs[i + 1], quals[i + 1], infos[i + 1],
+                                                frag);
+                _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
+                _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
+                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will compute
+                // the whole record and reference coordinates when writing out.
+                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_FIRST;
+                alignmentRecords[i].rID = -1;
+                alignmentRecords[i].beginPos = -1;
+                _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
+                alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_LAST;
+                alignmentRecords[i + 1].rID = -1;
+                alignmentRecords[i + 1].beginPos = -1;
+            }
+        else
+            for (unsigned i = 0; i < fragmentIds.size(); ++i)
+            {
+                TFragment frag(seq, fragments[i].beginPos, fragments[i].endPos);
+                seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag);
+                _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
+                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will compute
+                // the whole record and reference coordinates when writing out.
+                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_FIRST;
+                alignmentRecords[i].rID = -1;
+                alignmentRecords[i].beginPos = -1;
+            }
     }
 };
 
@@ -174,17 +274,10 @@ public:
     // Helper for storing the simulated reads for each contig/haplotype pair.  We will write out SAM files with the
     // alignment information relative to the materialized sequence.
     IdSplitter fragmentSplitter;
-    // Helper for joining the SAM files.
-    // SamJoiner fragmentJoiner;
-
-    // ----------------------------------------------------------------------
-    // Fragment and Read Simulation
-    // ----------------------------------------------------------------------
-
-    // Generation of infixes on the genome.
-    // FragmentGenerator fragGenerator;
-    // Sequencing of reads from given fragments.
-    // std::auto_ptr<SequencingSimulator> seqSimulator;
+    // Helper for joining the FASTQ files.
+    std::auto_ptr<FastxJoiner<seqan::Fastq> > fastxJoiner;
+    // Helper for storing SAM records for each contig/haplotype pair.  In the end, we will join this again.
+    IdSplitter alignmentSplitter;
 
     // ----------------------------------------------------------------------
     // File Output
@@ -232,7 +325,7 @@ public:
         std::cerr << " OK\n";
 
         // (2) Simulate the reads in the order of contigs/haplotypes.
-        std::cerr << "\nSimulating Reads:\n\n";
+        std::cerr << "\nSimulating Reads:\n";
         seqan::Dna5String contigSeq;  // materialized contig
         int rID = 0;  // current reference id
         int hID = 0;  // current haplotype id
@@ -240,10 +333,10 @@ public:
         // Note that all shared variables are correctly synchronized by implicit flushes at the critical sections below.
         while (vcfMat.materializeNext(contigSeq, rID, hID))
         {
-            std::cerr << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
+            std::cerr << "  " << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
             contigFragmentCount = 0;
 
-            SEQAN_OMP_PRAGMA(num_threads(options.numThreads))
+            SEQAN_OMP_PRAGMA(parallel num_threads(options.numThreads))
             {
                 int tID = omp_get_thread_num();
 
@@ -251,6 +344,7 @@ public:
                 {
                     // Read in the ids of the fragments to simulate.
                     threads[tID].fragmentIds.resize(options.chunkSize);  // make space
+                    bool doBreak = false;
                     SEQAN_OMP_PRAGMA(critical(fragment_ids))
                     {
                         // Load the fragment ids to simulate for.
@@ -258,12 +352,14 @@ public:
                                             fragmentIdSplitter.files[rID * haplotypeCount + hID]);
                         contigFragmentCount += numRead;
                         if (numRead == 0)
-                            break;  // No more work left.
+                            doBreak = true;
                         threads[tID].fragmentIds.resize(numRead);
                     }
+                    if (doBreak)
+                        break;  // No more work left.
                     
                     // Perform the simulation.
-                    threads[tID].run();
+                    threads[tID].run(contigSeq, rID);
                     
                     // Write out the temporary sequence.
                     SEQAN_OMP_PRAGMA(critical(seq_io))
@@ -282,7 +378,33 @@ public:
             
             std::cerr << " (" << contigFragmentCount << " fragments) OK\n";
         }
-        std::cerr << "\nDone simulating reads.\n";
+        std::cerr << "  Done simulating reads.\n";
+
+        // (3) Merge the sequences from external files into the output stream.
+        std::cerr << "Joining temporary files ...";
+        fragmentSplitter.reset();
+        fastxJoiner.reset(new FastxJoiner<seqan::Fastq>(fragmentSplitter));
+        FastxJoiner<seqan::Fastq> & joiner = *fastxJoiner.get();  // Shortcut
+        // TODO(holtgrew): Use bulk-reading calls.
+        seqan::CharString id, seq, qual;
+        if (options.seqOptions.simulateMatePairs)
+            while (!joiner.atEnd())
+            {
+                joiner.get(id, seq, qual);
+                if (writeRecord(outSeqsLeft, id, seq, qual) != 0)
+                    throw MasonIOException("Problem joining sequences.");
+                joiner.get(id, seq, qual);
+                if (writeRecord(outSeqsRight, id, seq, qual) != 0)
+                    throw MasonIOException("Problem joining sequences.");
+            }
+        else
+            while (!joiner.atEnd())
+            {
+                joiner.get(id, seq, qual);
+                if (writeRecord(outSeqsLeft, id, seq, qual) != 0)
+                    throw MasonIOException("Problem joining sequences.");
+            }
+        std::cerr << " OK\n";
     }
 
     void _init()
@@ -312,11 +434,13 @@ public:
         // Splitter for sequence.
         fragmentSplitter.numContigs = fragmentIdSplitter.numContigs;
         fragmentSplitter.open();
+        // Splitter for alignments, only required when writing out SAM/BAM.
+        if (!empty(options.outFileNameSam))
+        {
+            alignmentSplitter.numContigs = fragmentIdSplitter.numContigs;
+            alignmentSplitter.open();
+        }
         std::cerr << " OK\n";
-
-        // Configure fragment splitter and joiner.
-        // fragmentJoiner.splitter = &fragmentSplitter;
-        // fragmentJoiner.init();
 
         // Initialize simulation threads.
         std::cerr << "Initializing simulation threads ...";
@@ -328,6 +452,7 @@ public:
         // Open output files.
         std::cerr << "Opening output file " << options.outFileNameLeft << " ...";
         open(outSeqsLeft, toCString(options.outFileNameLeft), seqan::SequenceStream::WRITE);
+        outSeqsLeft.outputOptions = seqan::SequenceOutputOptions(0);  // also FASTA in one line
         if (!isGood(outSeqsLeft))
             throw MasonIOException("Could not open left/single-end output file.");
         std::cerr << " OK\n";
@@ -336,6 +461,7 @@ public:
         {
             std::cerr << "Opening output file " << options.outFileNameRight << " ...";
             open(outSeqsRight, toCString(options.outFileNameRight), seqan::SequenceStream::WRITE);
+            outSeqsRight.outputOptions = seqan::SequenceOutputOptions(0);  // also FASTA in one line
             if (!isGood(outSeqsRight))
                 throw MasonIOException("Could not open right/single-end output file.");
             std::cerr << " OK\n";

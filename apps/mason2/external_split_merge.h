@@ -117,6 +117,7 @@ public:
             {
                 SEQAN_ASSERT(!ferror(files[i]));
                 int res = fseek(files[i], 0L, SEEK_SET);
+                (void)res;
                 SEQAN_ASSERT_EQ(res, 0);
                 SEQAN_ASSERT(!ferror(files[i]));
             }
@@ -136,7 +137,7 @@ public:
 };
 
 // ----------------------------------------------------------------------------
-// Class FastaJoiner
+// Class FastxJoiner
 // ----------------------------------------------------------------------------
 
 // Allows joining by id name from FASTA data stored in a IdSplitter.
@@ -145,7 +146,8 @@ public:
 
 // TODO(holtgrew): Could use a heap/tournament tree.
 
-class FastaJoiner
+template <typename TTag>
+class FastxJoiner
 {
 public:
     // The type of the record reader to use.
@@ -156,21 +158,21 @@ public:
     // Number of active files.
     unsigned numActive;
     // Buffer for id and sequence for each input file.
-    seqan::StringSet<seqan::CharString> ids, seqs;
+    seqan::StringSet<seqan::CharString> ids, seqs, quals;
     // Maps files for activeness.
     std::vector<bool> active;
     // Record reads, one for each input file.
     std::vector<TReader *> readers;
 
-    FastaJoiner() : splitter(), numActive(0)
+    FastxJoiner() : splitter(), numActive(0)
     {}
 
-    FastaJoiner(IdSplitter & splitter) : splitter(&splitter), numActive(0)
+    FastxJoiner(IdSplitter & splitter) : splitter(&splitter), numActive(0)
     {
         _init();
     }
 
-    ~FastaJoiner()
+    ~FastxJoiner()
     {
         for (unsigned i = 0; i < readers.size(); ++i)
             delete readers[i];
@@ -181,22 +183,23 @@ public:
     {
         resize(ids, splitter->files.size());
         resize(seqs, splitter->files.size());
+        resize(quals, splitter->files.size());
         active.resize(splitter->files.size());
 
         for (unsigned i = 0; i < splitter->files.size(); ++i)
         {
             readers.push_back(new TReader(splitter->files[i]));
-            active[i] = _loadNext(ids[i], seqs[i], i);
+            active[i] = _loadNext(ids[i], seqs[i], quals[i], i);
             numActive += (active[i] != false);
         }
     }
 
     template <typename TSeq>
-    bool _loadNext(TSeq & id, TSeq & seq, unsigned idx)
+    bool _loadNext(TSeq & id, TSeq & seq, TSeq & qual, unsigned idx)
     {
         if (seqan::atEnd(*readers[idx]))
             return false;
-        if (readRecord(id, seq, *readers[idx], seqan::Fasta()) != 0)
+        if (readRecord(id, seq, qual, *readers[idx], TTag()) != 0)
         {
             std::cerr << "ERROR: Problem reading temporary data.\n";
             exit(1);
@@ -209,7 +212,7 @@ public:
         return (numActive == 0);
     }
 
-    int get(seqan::CharString & id, seqan::CharString & seq)
+    int get(seqan::CharString & id, seqan::CharString & seq, seqan::CharString & qual)
     {
         unsigned idx = seqan::maxValue<unsigned>();
         for (unsigned i = 0; i < length(ids); ++i)
@@ -223,9 +226,10 @@ public:
             return 1;
 
         // We use double-buffering and the input parameters as buffers.
-        active[idx] = _loadNext(id, seq, idx);
+        active[idx] = _loadNext(id, seq, qual, idx);
         swap(id, ids[idx]);
         swap(seq, seqs[idx]);
+        swap(qual, quals[idx]);
         numActive -= !active[idx];
 
         return 0;

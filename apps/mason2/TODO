@@ -6,6 +6,7 @@ URGENT
 
 mason_sequencing2 (IN: genome.fa genome.vcf [genome_meth.fa])
 
+ * writing/joining of SAM
  * contig-wise VCF import, to interval trees
  * simulation of reads (join by SAM from materialized)
  * FASTQ input from a typical run for quality and N-patterns, cycle through data

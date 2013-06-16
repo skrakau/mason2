@@ -55,6 +55,7 @@
 
 #include "fstream_temp.h"
 #include "external_split_merge.h"
+#include "mason_options.h"
 
 // ============================================================================
 // Forwards
@@ -68,6 +69,7 @@ inline void trimAfterSpace(seqan::CharString & s);
 // Tags, Classes, Enums
 // ============================================================================
 
+#if 0
 // ----------------------------------------------------------------------------
 // Class FragmentOptions
 // ----------------------------------------------------------------------------
@@ -206,6 +208,7 @@ public:
         return (c - '!') / 80.0 * 1.25;
     }
 };
+#endif  // #if 0
 
 // ----------------------------------------------------------------------------
 // Class Fragment
@@ -224,24 +227,27 @@ public:
 };
 
 // ----------------------------------------------------------------------------
-// Class FragmentGeneratorImpl
+// Class FragmentSamplerImpl
 // ----------------------------------------------------------------------------
 
 // Abstract base class for the fragment generation classes.
 
-class FragmentGeneratorImpl
+class FragmentSamplerImpl
 {
 public:
     virtual void generate(Fragment & frag, int rId, unsigned contigLength) = 0;
+    virtual void generateMany(std::vector<Fragment> & frags, int rId, unsigned contigLength,
+                              unsigned count) = 0;
 };
 
+
 // ----------------------------------------------------------------------------
-// Class UniformFragmentGeneratorImpl
+// Class UniformFragmentSamplerImpl
 // ----------------------------------------------------------------------------
 
 // Generation of fragments with uniform length.
 
-class UniformFragmentGeneratorImpl : public FragmentGeneratorImpl
+class UniformFragmentSamplerImpl : public FragmentSamplerImpl
 {
 public:
     // Minimal and maximal fragment length.
@@ -253,20 +259,24 @@ public:
     // The probability density function for the simulation.
     seqan::Pdf<seqan::Uniform<int> > pdf;
 
-    UniformFragmentGeneratorImpl(TRng & rng, int minLength, int maxLength) :
+    UniformFragmentSamplerImpl(TRng & rng, int minLength, int maxLength) :
             minLength(minLength), maxLength(maxLength), rng(rng), pdf(minLength, maxLength)
     {}
 
     virtual void generate(Fragment & frag, int rId, unsigned contigLength);
+
+    virtual void generateMany(std::vector<Fragment> & frags, int rId, unsigned contigLength, unsigned count);
+
+    void _generate(Fragment & frag, int rId, unsigned contigLength);
 };
 
 // ----------------------------------------------------------------------------
-// Class NormalFragmentGeneratorImpl
+// Class NormalFragmentSamplerImpl
 // ----------------------------------------------------------------------------
 
 // Generation of fragments with normally distributed length.
 
-class NormalFragmentGeneratorImpl : public FragmentGeneratorImpl
+class NormalFragmentSamplerImpl : public FragmentSamplerImpl
 {
 public:
     // Mean length and length standard deviation.
@@ -278,35 +288,39 @@ public:
     // The probability density function for the simulation.
     seqan::Pdf<seqan::Normal> pdf;
 
-    NormalFragmentGeneratorImpl(TRng & rng, int meanLength, int stdDevLength) :
+    NormalFragmentSamplerImpl(TRng & rng, int meanLength, int stdDevLength) :
             meanLength(meanLength), stdDevLength(stdDevLength), rng(rng), pdf(meanLength, stdDevLength)
     {}
 
     virtual void generate(Fragment & frag, int rId, unsigned contigLength);
+
+    virtual void generateMany(std::vector<Fragment> & frags, int rId, unsigned contigLength, unsigned count);
+
+    void _generate(Fragment & frag, int rId, unsigned contigLength);
 };
 
 // ----------------------------------------------------------------------------
-// Class FragmentGenerator
+// Class FragmentSampler
 // ----------------------------------------------------------------------------
 
 // Generator for sequence fragments.
 
-class FragmentGenerator
+class FragmentSampler
 {
 public:
     // Configuration for the generator.
-    FragmentOptions options;
+    FragmentSamplerOptions options;
 
     // The actual generator implementation to use.
-    std::auto_ptr<FragmentGeneratorImpl> impl;
+    std::auto_ptr<FragmentSamplerImpl> impl;
 
-    FragmentGenerator(TRng & rng, FragmentOptions const & options) : options(options)
+    FragmentSampler(TRng & rng, FragmentSamplerOptions const & options) : options(options)
     {
-        if (options.model == FragmentOptions::UNIFORM)
-            impl.reset(new UniformFragmentGeneratorImpl(rng, options.minFragmentSize,
+        if (options.model == FragmentSamplerOptions::UNIFORM)
+            impl.reset(new UniformFragmentSamplerImpl(rng, options.minFragmentSize,
                                                         options.maxFragmentSize));
         else
-            impl.reset(new NormalFragmentGeneratorImpl(rng, options.meanFragmentSize,
+            impl.reset(new NormalFragmentSamplerImpl(rng, options.meanFragmentSize,
                                                        options.stdDevFragmentSize));
     }
 
@@ -317,8 +331,15 @@ public:
     {
         impl->generate(frag, rId, contigLength);
     }
+
+    // Generate multiple fragments.
+    void generateMany(std::vector<Fragment> & frags, int rId, unsigned contigLength, unsigned count)
+    {
+        impl->generateMany(frags, rId, contigLength, count);
+    }
 };
 
+#if 0
 class FragmentSimulator
 {
 public:
@@ -331,13 +352,13 @@ public:
     seqan::SequenceStream & outputStream;
     // The genome to access sequence with.
     Genome & genome;
-    // Simulation options for FragmentGenerator.
+    // Simulation options for FragmentSampler.
     FragmentOptions fragOptions;
 
     // Partial sums of the contig lengths.  Used for picking the contig to simulate from.
     seqan::String<int> lengthSums;
 
-    FragmentGenerator fragGenerator;
+    FragmentSampler fragGenerator;
 
     FragmentSimulator(TRng & rng,
                       seqan::SequenceStream & outStream,
@@ -403,6 +424,7 @@ public:
         return result;
     }
 };
+#endif  // #if 0
 
 // ============================================================================
 // Metafunctions
@@ -411,6 +433,8 @@ public:
 // ============================================================================
 // Functions
 // ============================================================================
+
+#if 0
 
 void FragmentSimulator::simulate()
 {
@@ -531,6 +555,8 @@ void FragmentSimulator::simulate()
     }
 }
 
+#endif  // #if 0
+
 // --------------------------------------------------------------------------
 // Function trimAfterSpace()
 // --------------------------------------------------------------------------
@@ -548,9 +574,22 @@ void trimAfterSpace(seqan::CharString & s)
     resize(s, i);
 }
 
-// TODO(holtgrew): The virtual functions below are the same!
+// TODO(holtgrew): Too much redundancy here.
 
-void UniformFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned contigLength)
+void UniformFragmentSamplerImpl::generate(Fragment & frag, int rId, unsigned contigLength)
+{
+    _generate(frag, rId, contigLength);
+}
+
+void UniformFragmentSamplerImpl::generateMany(std::vector<Fragment> & frags, int rId,
+                                                unsigned contigLength, unsigned count)
+{
+    frags.resize(count);
+    for (unsigned i = 0; i < count; ++i)
+        _generate(frags[0], rId, contigLength);
+}
+
+void UniformFragmentSamplerImpl::_generate(Fragment & frag, int rId, unsigned contigLength)
 {
     int fragLength = 0;
     unsigned const MAX_TRIES = 1000;
@@ -571,7 +610,20 @@ void UniformFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned c
     }
 }
 
-void NormalFragmentGeneratorImpl::generate(Fragment & frag, int rId, unsigned contigLength)
+void NormalFragmentSamplerImpl::generate(Fragment & frag, int rId, unsigned contigLength)
+{
+    _generate(frag, rId, contigLength);
+}
+
+void NormalFragmentSamplerImpl::generateMany(std::vector<Fragment> & frags, int rId,
+                                               unsigned contigLength, unsigned count)
+{
+    frags.resize(count);
+    for (unsigned i = 0; i < count; ++i)
+        _generate(frags[i], rId, contigLength);
+}
+
+void NormalFragmentSamplerImpl::_generate(Fragment & frag, int rId, unsigned contigLength)
 {
     int fragLength = 0;
     unsigned const MAX_TRIES = 1000;

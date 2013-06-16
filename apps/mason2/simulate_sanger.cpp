@@ -1,45 +1,6 @@
 #include "sequencing.h"
 
 // ===========================================================================
-// Class SangerSequencingOptions
-// ===========================================================================
-
-// ---------------------------------------------------------------------------
-// Function SangerSequencingOptions::print()
-// ---------------------------------------------------------------------------
-
-void SangerSequencingOptions::print(std::ostream & out)
-{
-    SequencingOptions::print(out);
-
-    out << "\n"
-        << "  SIMULATED TECHNOLOGY          \tsanger\n"
-        << "\n"
-        << "SANGER OPTIONS\n"
-        << "\n"
-        << "  UNIFORM READ LENGTH           \t" << yesNo(readLengthIsUniform) << "\n"
-        << "  MEAN READ LENGTH              \t" << readLengthMean << "\n"
-        << "  READ LENGTH ERROR             \t" << readLengthError << "\n"
-        << "\n"
-        << "  PROB MISMATCH BEGIN           \t" << probabilityMismatchBegin << "\n"
-        << "  PROB MISMATCH END             \t" << probabilityMismatchEnd << "\n"
-        << "  PROB INSERTION BEGIN          \t" << probabilityInsertBegin << "\n"
-        << "  PROB INSERTION END            \t" << probabilityInsertEnd << "\n"
-        << "  PROB DELETION BEGIN           \t" << probabilityDeleteBegin << "\n"
-        << "  PROB DELETION END             \t" << probabilityDeleteEnd << "\n"
-        << "\n"
-        << "  QUALITY MEAN MATCH BEGIN      \t" << qualityMatchStartMean << "\n"
-        << "  QUALITY MEAN MATCH END        \t" << qualityMatchEndMean << "\n"
-        << "  QUALITY STD DEV MATCH BEGIN   \t" << qualityMatchStartStdDev << "\n"
-        << "  QUALITY STD DEV MATCH END     \t" << qualityMatchEndStdDev << "\n"
-        << "\n"
-        << "  QUALITY MEAN ERROR BEGIN      \t" << qualityErrorStartMean << "\n"
-        << "  QUALITY MEAN ERROR END        \t" << qualityErrorEndMean << "\n"
-        << "  QUALITY STD DEV ERROR BEGIN   \t" << qualityErrorStartStdDev << "\n"
-        << "  QUALITY STD DEV ERROR END     \t" << qualityErrorEndStdDev << "\n";
-}
-
-// ===========================================================================
 // Class SangerSequencingSimulator
 // ===========================================================================
 
@@ -162,7 +123,7 @@ void SangerSequencingSimulator::simulateRead(
         reverse(quals);
 
     // Write out sequencing information info if configured to do so.
-    if (sangerOptions.embedReadInfo)
+    if (seqOptions->embedReadInfo)
     {
         info.cigar = cigar;
         unsigned len = 0;

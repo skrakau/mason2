@@ -4,52 +4,6 @@
 const unsigned MAX_HOMOPOLYMER_LEN = 40;
 
 // ===========================================================================
-// Class Roche454SequencingOptions
-// ===========================================================================
-
-// ---------------------------------------------------------------------------
-// Function Roche454SequencingOptions::lengthModelStr()
-// ---------------------------------------------------------------------------
-
-const char * Roche454SequencingOptions::lengthModelStr(ReadLengthModel m)
-{
-    switch (m)
-    {
-        case UNIFORM:
-            return "UNIFORM";
-        case NORMAL:
-            return "NORMAL";
-        default:
-            return "INVALID";
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Function Roche454SequencingOptions::print()
-// ---------------------------------------------------------------------------
-
-void Roche454SequencingOptions::print(std::ostream & out)
-{
-    SequencingOptions::print(out);
-
-    out << "\n"
-        << "  SIMULATED TECHNOLOGY          \t454\n"
-        << "\n"
-        << "454 OPTIONS\n"
-        << "\n"
-        << "  LENGTH MODEL                  \t" << lengthModelStr(lengthModel) << "\n"
-        << "  MIN READ LENGTH               \t" << minReadLength << "\n"
-        << "  MAX LENGTH ERROR              \t" << maxReadLength << "\n"
-        << "  MEAN READ LENGTH              \t" << meanReadLength << "\n"
-        << "  READ LENGTH ERROR             \t" << stdDevReadLength << "\n"
-        << "\n"
-        << "  SQRT IN STD DEV               \t" << yesNo(sqrtInStdDev) << "\n"
-        << "  K                             \t" << k << "\n"
-        << "  BACKGROUND NOISE MEAN         \t" << backgroundNoiseMean << "\n"
-        << "  BACKGROUND NOISE STD DEV      \t" << backgroundNoiseStdDev << "\n";
-}
-
-// ===========================================================================
 // Class ThresholdMatrix
 // ===========================================================================
 
@@ -229,8 +183,9 @@ public:
 
 // Stores the threshold matrix.
 
-struct Roche454Model
+class Roche454Model
 {
+public:
     ThresholdMatrix thresholdMatrix;
 };
 
@@ -243,9 +198,10 @@ struct Roche454Model
 // ---------------------------------------------------------------------------
 
 Roche454SequencingSimulator::Roche454SequencingSimulator(
-        TRng & rng, Roche454SequencingOptions const & roche454Options) :
-        SequencingSimulator(rng, roche454Options), roche454Options(roche454Options),
-        model(new Roche454Model())
+        TRng & rng,
+        SequencingOptions const & seqOptions,
+        Roche454SequencingOptions const & roche454Options) :
+        SequencingSimulator(rng, seqOptions), roche454Options(roche454Options)
 {
     _initModel();
 }
@@ -390,7 +346,7 @@ void Roche454SequencingSimulator::simulateRead(
         for (; j < realBaseCount[i]; ++j)
             appendOperation(cigar, 'D');
         // Simulate qualities if configured to do so.
-        if (roche454Options.simulateQualities)
+        if (seqOptions->simulateQualities)
         {
             // Compute likelihood for calling the bases, given this intensity and the Phred score from this.
             double densitySum = 0;
@@ -407,7 +363,7 @@ void Roche454SequencingSimulator::simulateRead(
     }
 
     // Write out sequencing information info if configured to do so.
-    if (roche454Options.embedReadInfo)
+    if (seqOptions->embedReadInfo)
     {
         info.cigar = cigar;
         unsigned len = 0;

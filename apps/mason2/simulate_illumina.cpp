@@ -29,40 +29,6 @@ public:
 };
 
 // ===========================================================================
-// Class IlluminaSequencingOptions
-// ===========================================================================
-
-// ---------------------------------------------------------------------------
-// Function IlluminaSequencingOptions::print()
-// ---------------------------------------------------------------------------
-
-void IlluminaSequencingOptions::print(std::ostream & out)
-{
-    SequencingOptions::print(out);
-
-    out << "\n"
-        << "  SIMULATED TECHNOLOGY          \tillumina\n"
-        << "\n"
-        << "ILLUMINA OPTIONS\n"
-        << "\n"
-        << "  PROB INSERTION                \t" << probabilityInsert << "\n"
-        << "  PROB DELETION                 \t" << probabilityDelete << "\n"
-        << "  PROB MISMATCH SCALE           \t" << probabilityMismatchScale << "\n"
-        << "  PROB MISMATCH                 \t" << probabilityMismatch << "\n"
-        << "  PROB MISMATCH BEGIN           \t" << probabilityMismatchBegin << "\n"
-        << "  PROB MISMATCH END             \t" << probabilityMismatchEnd << "\n"
-        << "  POSITION RAISE                \t" << positionRaise << "\n"
-        << "  QUALITY MEAN BEGIN            \t" << meanQualityBegin << "\n"
-        << "  QUALITY MEAN END              \t" << meanQualityEnd << "\n"
-        << "  QUALITY STD DEV BEGIN         \t" << stdDevQualityBegin << "\n"
-        << "  QUALITY STD DEV END           \t" << stdDevQualityEnd << "\n"
-        << "  MISMATCH QUALITY MEAN BEGIN   \t" << meanMismatchQualityBegin << "\n"
-        << "  MISMATCH QUALITY MEAN END     \t" << meanMismatchQualityEnd << "\n"
-        << "  MISMATCH QUALITY STD DEV BEGIN\t" << stdDevMismatchQualityBegin << "\n"
-        << "  MISMATCH QUALITY STD DEV END  \t" << stdDevMismatchQualityEnd << "\n";
-}
-
-// ===========================================================================
 // Class IlluminaSequencingSimulator
 // ===========================================================================
 
@@ -70,9 +36,10 @@ void IlluminaSequencingOptions::print(std::ostream & out)
 // Constructor IlluminaSequencingSimulator::IlluminaSequencingSimulator
 // ---------------------------------------------------------------------------
 
-IlluminaSequencingSimulator::IlluminaSequencingSimulator(
-        TRng & rng, IlluminaSequencingOptions const & illuminaOptions) :
-        SequencingSimulator(rng, illuminaOptions), illuminaOptions(illuminaOptions),
+IlluminaSequencingSimulator::IlluminaSequencingSimulator(TRng & rng,
+                                                         SequencingOptions const & seqOptions,
+                                                         IlluminaSequencingOptions const & illuminaOptions) :
+        SequencingSimulator(rng, seqOptions), illuminaOptions(illuminaOptions),
         model(new IlluminaModel())
 {
     this->_initModel();
@@ -267,7 +234,7 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
         reverse(quals);
 
     // Write out sequencing information info if configured to do so.
-    if (illuminaOptions.embedReadInfo)
+    if (seqOptions->embedReadInfo)
     {
         info.cigar = cigar;
         unsigned len = 0;
@@ -369,16 +336,16 @@ std::auto_ptr<SequencingSimulator> SequencingSimulatorFactory::make()
 {
     std::auto_ptr<SequencingSimulator> res;
         
-    switch (tech)
+    switch (seqOptions.sequencingTechnology)
     {
-        case ILLUMINA:
-            res.reset(new IlluminaSequencingSimulator(rng, *dynamic_cast<IlluminaSequencingOptions const *>(options)));
+        case SequencingOptions::ILLUMINA:
+            res.reset(new IlluminaSequencingSimulator(rng, seqOptions, illuminaOptions));
             break;
-        case SANGER:
-            res.reset(new SangerSequencingSimulator(rng, *dynamic_cast<SangerSequencingOptions const *>(options)));
+        case SequencingOptions::SANGER:
+            res.reset(new SangerSequencingSimulator(rng, seqOptions, sangerOptions));
             break;
-        case ROCHE_454:
-            res.reset(new Roche454SequencingSimulator(rng, *dynamic_cast<Roche454SequencingOptions const *>(options)));
+        case SequencingOptions::ROCHE_454:
+            res.reset(new Roche454SequencingSimulator(rng, seqOptions, roche454Options));
             break;
     }
 
