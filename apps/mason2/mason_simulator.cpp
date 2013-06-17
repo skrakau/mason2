@@ -328,26 +328,10 @@ public:
         return 0;
     }
 
-    void _simulateReads()
+    void _simulateReadsDoSimulation()
     {
-        std::cerr << "\n____READ SIMULATION___________________________________________________________\n"
-                  << "\n";
-
-        // (1) Distribute read ids to the contigs/haplotypes.
-        //
-        // We will simulate the reads in the order of contigs/haplotypes and in a final join script generate output file
-        // that are sorted by read id.
-        int seqCount = numSeqs(vcfMat.faiIndex);
-        int haplotypeCount = vcfMat.numHaplotypes;
-        std::cerr << "Distributing fragments to " << seqCount << " contigs (" << haplotypeCount
-                  << " haplotypes each) ...";
-        for (int i = 0; i < options.numFragments; ++i)
-            fwrite(&i, sizeof(int), 1, fragmentIdSplitter.files[contigPicker.toId(contigPicker.pick())]);
-        fragmentIdSplitter.reset();
-        std::cerr << " OK\n";
-
-        // (2) Simulate the reads in the order of contigs/haplotypes.
         std::cerr << "\nSimulating Reads:\n";
+        int haplotypeCount = vcfMat.numHaplotypes;
         seqan::Dna5String contigSeq;  // materialized contig
         int rID = 0;  // current reference id
         int hID = 0;  // current haplotype id
@@ -408,8 +392,10 @@ public:
             std::cerr << " (" << contigFragmentCount << " fragments) OK\n";
         }
         std::cerr << "  Done simulating reads.\n";
+    }
 
-        // (3) Merge the sequences from external files into the output stream.
+    void _simulateReadsJoin()
+    {
         std::cerr << "Joining temporary files ...";
         fragmentSplitter.reset();
         fastxJoiner.reset(new FastxJoiner<seqan::Fastq>(fragmentSplitter));
@@ -452,17 +438,75 @@ public:
         std::cerr << " OK\n";
     }
 
-    void _init()
+    void _simulateReads()
     {
-        std::cerr << "\n____INITIALIZING______________________________________________________________\n"
+        std::cerr << "\n____READ SIMULATION___________________________________________________________\n"
                   << "\n";
-        
-        // Initialize VCF materialization (reference FASTA and input VCF).
-        std::cerr << "Opening reference and variants file ...";
-        vcfMat.init();
+
+        // (1) Distribute read ids to the contigs/haplotypes.
+        //
+        // We will simulate the reads in the order of contigs/haplotypes and in a final join script generate output file
+        // that are sorted by read id.
+        int seqCount = numSeqs(vcfMat.faiIndex);
+        int haplotypeCount = vcfMat.numHaplotypes;
+        std::cerr << "Distributing fragments to " << seqCount << " contigs (" << haplotypeCount
+                  << " haplotypes each) ...";
+        for (int i = 0; i < options.numFragments; ++i)
+            fwrite(&i, sizeof(int), 1, fragmentIdSplitter.files[contigPicker.toId(contigPicker.pick())]);
+        fragmentIdSplitter.reset();
         std::cerr << " OK\n";
 
-        // Configure contigPicker and fragment id splitter.
+        // (2) Simulate the reads in the order of contigs/haplotypes.
+        _simulateReadsDoSimulation();
+
+        // (3) Merge the sequences from external files into the output stream.
+        _simulateReadsJoin();
+    }
+
+    // Initialize the alignment splitter data structure.
+    void _initAlignmentSplitter()
+    {
+        // Open alignment splitters.
+        alignmentSplitter.numContigs = fragmentIdSplitter.numContigs;
+        alignmentSplitter.open();
+        // Build and write out header, fill ref name store.
+        seqan::BamHeaderRecord vnHeaderRecord;
+        vnHeaderRecord.type = seqan::BAM_HEADER_FIRST;
+        appendValue(vnHeaderRecord.tags, seqan::Pair<seqan::CharString>("VN", "1.4"));
+        appendValue(header.records, vnHeaderRecord);
+        resize(header.sequenceInfos, numSeqs(vcfMat.faiIndex));
+        for (unsigned i = 0; i < numSeqs(vcfMat.faiIndex); ++i)
+        {
+            if (!empty(options.matOptions.vcfFileName))
+                header.sequenceInfos[i].i1 = vcfMat.vcfStream.header.sequenceNames[i];
+            else
+                header.sequenceInfos[i].i1 = sequenceName(vcfMat.faiIndex, i);
+            unsigned idx = 0;
+            if (!getIdByName(vcfMat.faiIndex, header.sequenceInfos[i].i1, idx))
+            {
+                std::stringstream ss;
+                ss << "Could not find " << header.sequenceInfos[i].i1 << " from VCF file in FAI index.";
+                throw MasonIOException(ss.str());
+            }
+            header.sequenceInfos[i].i2 = sequenceLength(vcfMat.faiIndex, idx);
+            appendValue(nameStore, sequenceName(vcfMat.faiIndex, idx));
+            seqan::BamHeaderRecord seqHeaderRecord;
+            seqHeaderRecord.type = seqan::BAM_HEADER_REFERENCE;
+            appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("SN", header.sequenceInfos[i].i1));
+            std::stringstream ss;
+            ss << header.sequenceInfos[i].i2;
+            appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("LN", ss.str().c_str()));
+            appendValue(header.records, seqHeaderRecord);
+        }
+        refresh(nameStoreCache);
+        for (unsigned i = 0; i < alignmentSplitter.files.size(); ++i)
+            if (write2(alignmentSplitter.files[i], header, bamIOContext, seqan::Sam()) != 0)
+                throw MasonIOException("Could not write out SAM header to temporary file.");
+    }
+
+    // Configure contigPicker.
+    void _initContigPicker()
+    {
         std::cerr << "Initializing fragment-to-contig distribution ...";
         // Contig picker.
         contigPicker.numHaplotypes = vcfMat.numHaplotypes;
@@ -481,54 +525,13 @@ public:
         fragmentSplitter.open();
         // Splitter for alignments, only required when writing out SAM/BAM.
         if (!empty(options.outFileNameSam))
-        {
-            // Open alignment splitters.
-            alignmentSplitter.numContigs = fragmentIdSplitter.numContigs;
-            alignmentSplitter.open();
-            // Build and write out header, fill ref name store.
-            seqan::BamHeaderRecord vnHeaderRecord;
-            vnHeaderRecord.type = seqan::BAM_HEADER_FIRST;
-            appendValue(vnHeaderRecord.tags, seqan::Pair<seqan::CharString>("VN", "1.4"));
-            appendValue(header.records, vnHeaderRecord);
-            resize(header.sequenceInfos, numSeqs(vcfMat.faiIndex));
-            for (unsigned i = 0; i < numSeqs(vcfMat.faiIndex); ++i)
-            {
-                if (!empty(options.matOptions.vcfFileName))
-                    header.sequenceInfos[i].i1 = vcfMat.vcfStream.header.sequenceNames[i];
-                else
-                    header.sequenceInfos[i].i1 = sequenceName(vcfMat.faiIndex, i);
-                unsigned idx = 0;
-                if (!getIdByName(vcfMat.faiIndex, header.sequenceInfos[i].i1, idx))
-                {
-                    std::stringstream ss;
-                    ss << "Could not find " << header.sequenceInfos[i].i1 << " from VCF file in FAI index.";
-                    throw MasonIOException(ss.str());
-                }
-                header.sequenceInfos[i].i2 = sequenceLength(vcfMat.faiIndex, idx);
-                appendValue(nameStore, sequenceName(vcfMat.faiIndex, idx));
-                seqan::BamHeaderRecord seqHeaderRecord;
-                seqHeaderRecord.type = seqan::BAM_HEADER_REFERENCE;
-                appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("SN", header.sequenceInfos[i].i1));
-                std::stringstream ss;
-                ss << header.sequenceInfos[i].i2;
-                appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("LN", ss.str().c_str()));
-                appendValue(header.records, seqHeaderRecord);
-            }
-            refresh(nameStoreCache);
-            for (unsigned i = 0; i < alignmentSplitter.files.size(); ++i)
-                if (write2(alignmentSplitter.files[i], header, bamIOContext, seqan::Sam()) != 0)
-                    throw MasonIOException("Could not write out SAM header to temporary file.");
-        }
+            _initAlignmentSplitter();
         std::cerr << " OK\n";
+    }
 
-        // Initialize simulation threads.
-        std::cerr << "Initializing simulation threads ...";
-        threads.resize(options.numThreads);
-        for (int i = 0; i < options.numThreads; ++i)
-            threads[i].init(options.seed + i * options.seedSpacing, options);
-        std::cerr << " OK\n";
-
-        // Open output files.
+    // Open the output files.
+    void _initOpenOutputFiles()
+    {
         std::cerr << "Opening output file " << options.outFileNameLeft << " ...";
         open(outSeqsLeft, toCString(options.outFileNameLeft), seqan::SequenceStream::WRITE);
         outSeqsLeft.outputOptions = seqan::SequenceOutputOptions(0);  // also FASTA in one line
@@ -554,6 +557,30 @@ public:
                 throw MasonIOException("Could not open SAM/BAM output file.");
             std::cerr << " OK\n";
         }
+    }
+
+    void _init()
+    {
+        std::cerr << "\n____INITIALIZING______________________________________________________________\n"
+                  << "\n";
+        
+        // Initialize VCF materialization (reference FASTA and input VCF).
+        std::cerr << "Opening reference and variants file ...";
+        vcfMat.init();
+        std::cerr << " OK\n";
+
+        // Configure contigPicker and fragment id splitter.
+        _initContigPicker();
+
+        // Initialize simulation threads.
+        std::cerr << "Initializing simulation threads ...";
+        threads.resize(options.numThreads);
+        for (int i = 0; i < options.numThreads; ++i)
+            threads[i].init(options.seed + i * options.seedSpacing, options);
+        std::cerr << " OK\n";
+
+        // Open output files.
+        _initOpenOutputFiles();
     }
 
     void _printHeader()
