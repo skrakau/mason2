@@ -111,7 +111,7 @@ def main(source_base, binary_base):
 
     conf = app_tests.TestConf(
         program=path_to_variator,
-        args=['-if', ph.inFile('random.fasta'),
+        args=['-ir', ph.inFile('random.fasta'),
               '-n', '2',
               '-ov', ph.outFile('random_var1.vcf'),
               '-of', ph.outFile('random_var1.fasta'),
@@ -152,9 +152,9 @@ def main(source_base, binary_base):
 
     conf = app_tests.TestConf(
         program=path_to_materializer,
-        args=['-if', ph.inFile('random.fasta'),
+        args=['-ir', ph.inFile('random.fasta'),
               '-iv', ph.inFile('random_var1.vcf'),
-              '-of', ph.outFile('materializer.random_var1.fasta'),
+              '-o', ph.outFile('materializer.random_var1.fasta'),
               ],
         redir_stdout=ph.outFile('materializer.random_var1.stdout'),
         redir_stderr=ph.outFile('materializer.random_var1.stderr'),

@@ -895,7 +895,7 @@ public:
         seqan::CharString id = sequenceName(faiIndex, rId);
         append(id, options.haplotypeSep);
         char buffer[20];
-        snprintf(buffer, 19, "%d", hId);
+        snprintf(buffer, 19, "%d", hId + 1);
         append(id, buffer);
 
         // Write out breakpoints.
@@ -1479,10 +1479,10 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     //                                         seqan::ArgParseOption::INPUTFILE, "VCF"));
     // setValidValues(parser, "in-vcf", "vcf");
 
-    addOption(parser, seqan::ArgParseOption("if", "in-fasta", "FASTA file with reference.",
+    addOption(parser, seqan::ArgParseOption("ir", "in-reference", "FASTA file with reference.",
                                             seqan::ArgParseOption::INPUTFILE, "FASTA"));
-    setValidValues(parser, "in-fasta", "fasta fa");
-    setRequired(parser, "in-fasta");
+    setValidValues(parser, "in-reference", "fasta fa");
+    setRequired(parser, "in-reference");
 
     addOption(parser, seqan::ArgParseOption("it", "in-variant-tsv",
                                             "TSV file with variants to simulate.  See Section on the Variant TSV File below.",
@@ -1733,7 +1733,7 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.seed, parser, "seed");
 
     // getOptionValue(options.vcfInFile, parser, "in-vcf");
-    getOptionValue(options.fastaInFile, parser, "in-fasta");
+    getOptionValue(options.fastaInFile, parser, "in-reference");
     getOptionValue(options.vcfOutFile, parser, "out-vcf");
     getOptionValue(options.fastaOutFile, parser, "out-fasta");
     getOptionValue(options.outputBreakpointFile, parser, "out-breakpoints");

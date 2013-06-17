@@ -20,16 +20,16 @@ ${GENOME} -s 1 -l 1000 -l 100 -o genome.test2.fasta >genome.test2.stdout 2>genom
 # mason_variator
 # ============================================================
 
-echo "${VARIATOR} -n 2 -if random.fasta -ov random_var1.vcf -of random_var1.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --methylation-levels --meth-fasta-out random_var1_meth.fasta --out-breakpoints random_var1_bp.txt >random_var1.vcf.stdout 2>random_var1.vcf.stderr"
-${VARIATOR} -n 2 -if random.fasta -ov random_var1.vcf -of random_var1.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --methylation-levels --meth-fasta-out random_var1_meth.fasta --out-breakpoints random_var1_bp.txt >random_var1.vcf.stdout 2>random_var1.vcf.stderr
+echo "${VARIATOR} -n 2 -ir random.fasta -ov random_var1.vcf -of random_var1.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --methylation-levels --meth-fasta-out random_var1_meth.fasta --out-breakpoints random_var1_bp.txt >random_var1.vcf.stdout 2>random_var1.vcf.stderr"
+${VARIATOR} -n 2 -ir random.fasta -ov random_var1.vcf -of random_var1.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --methylation-levels --meth-fasta-out random_var1_meth.fasta --out-breakpoints random_var1_bp.txt >random_var1.vcf.stdout 2>random_var1.vcf.stderr
 
 # ============================================================
 # mason_materializer
 # ============================================================
 
-echo "${MATERIALIZER} -if random.fasta -iv random_var1.vcf -of materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr"
-${MATERIALIZER} -if random.fasta -iv random_var1.vcf -of materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr
-rm materializer.random_var1.fasta  # we'll compare against variator output
+echo "${MATERIALIZER} -ir random.fasta -iv random_var1.vcf -o materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr"
+${MATERIALIZER} -ir random.fasta -iv random_var1.vcf -o materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr
+rm -f materializer.random_var1.fasta  # we'll compare against variator output
 
 # ============================================================
 # mason_simulator

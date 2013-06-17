@@ -1018,7 +1018,7 @@ void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
     addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
 
-    addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
+    addOption(parser, seqan::ArgParseOption("o", "out", "Output of materialized contigs.",
                                             seqan::ArgParseOption::OUTPUTFILE, "OUT"));
     setRequired(parser, "out");
     setValidValues(parser, "out", "fa fasta");
@@ -1026,7 +1026,7 @@ void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("", "haplotype-name-sep",
                                             "String separating contig name from haplotype number.",
                                             seqan::ArgParseOption::STRING, "SEP"));
-    setDefaultValue(parser, "hapotype-name-sep", "/");
+    setDefaultValue(parser, "haplotype-name-sep", "/");
 
     // Add options of the component options.
     matOptions.addOptions(parser);
