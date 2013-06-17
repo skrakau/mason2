@@ -1005,3 +1005,193 @@ void MasonSimulatorOptions::print(std::ostream & out) const
     out << "\n";
     rocheOptions.print(out);
 }
+
+// ----------------------------------------------------------------------------
+// Function MasonSimulatorOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    // Add top-level options.
+
+    addOption(parser, seqan::ArgParseOption("q", "quiet", "Low verbosity."));
+    addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
+    addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
+
+    addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
+    setRequired(parser, "out");
+    setValidValues(parser, "out", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("", "haplotype-name-sep",
+                                            "String separating contig name from haplotype number.",
+                                            seqan::ArgParseOption::STRING, "SEP"));
+    setDefaultValue(parser, "hapotype-name-sep", "/");
+
+    // Add options of the component options.
+    matOptions.addOptions(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMaterializerOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void MasonMaterializerOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    // Add text sections of the component options.
+    matOptions.addTextSections(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMaterializerOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void MasonMaterializerOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    // Get top-level options.
+    if (isSet(parser, "quiet"))
+        verbosity = 0;
+    if (isSet(parser, "verbose"))
+        verbosity = 2;
+    if (isSet(parser, "very-verbose"))
+        verbosity = 3;
+    getOptionValue(outputFileName, parser, "out");
+    getOptionValue(haplotypeNameSep, parser, "haplotype-name-sep");
+
+    // Get options for the other components that we use.
+    matOptions.getOptionValues(parser);
+
+    // Copy in the verbosity flag into the component options.
+    matOptions.verbosity = verbosity;
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMaterializerOptions::print()
+// ----------------------------------------------------------------------------
+
+void MasonMaterializerOptions::print(std::ostream & out) const
+{
+    out << "MASON MATERIALIZER OPTIONS\n"
+        << "--------------------------\n"
+        << "\n"
+        << "VERBOSITY         \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "OUTPUT FILE       \t" << outputFileName << "\n"
+        << "\n"
+        << "HAPLOTYPE NAME SEP\t" << haplotypeNameSep << "\n"
+        << "\n";
+    matOptions.print(out);
+    out << "\n";
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonFragmentSequencingOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void MasonFragmentSequencingOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    // Add top-level options.
+
+    addOption(parser, seqan::ArgParseOption("q", "quiet", "Low verbosity."));
+    addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
+    addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
+
+    addOption(parser, seqan::ArgParseOption("", "seed", "Seed to use for random number generator.",
+                                            seqan::ArgParseOption::INTEGER, "NUM"));
+    setDefaultValue(parser, "seed", "0");
+
+    addOption(parser, seqan::ArgParseOption("i", "in", "Path to input file.",
+                                            seqan::ArgParseOption::INPUTFILE, "OUT"));
+    setRequired(parser, "in");
+    setValidValues(parser, "in", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
+    setRequired(parser, "out");
+    setValidValues(parser, "out", "fa fasta fq fastq");
+
+    addOption(parser, seqan::ArgParseOption("or", "out-right", "Output of right reads.  Giving this options enables "
+                                            "paired-end simulation.", seqan::ArgParseOption::OUTPUTFILE, "OUT2"));
+    setValidValues(parser, "out-right", "fa fasta fq fastq");
+
+    // Add options of the component options.
+    seqOptions.addOptions(parser);
+    illuminaOptions.addOptions(parser);
+    sangerOptions.addOptions(parser);
+    rocheOptions.addOptions(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonFragmentSequencingOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void MasonFragmentSequencingOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    // Add text sections of the component options.
+    seqOptions.addTextSections(parser);
+    illuminaOptions.addTextSections(parser);
+    sangerOptions.addTextSections(parser);
+    rocheOptions.addTextSections(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonFragmentSequencingOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void MasonFragmentSequencingOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    // Get top-level options.
+    if (isSet(parser, "quiet"))
+        verbosity = 0;
+    if (isSet(parser, "verbose"))
+        verbosity = 2;
+    if (isSet(parser, "very-verbose"))
+        verbosity = 3;
+    getOptionValue(seed, parser, "seed");
+    getOptionValue(inputFileName, parser, "in");
+    getOptionValue(outFileNameLeft, parser, "out");
+    getOptionValue(outFileNameRight, parser, "out-right");
+
+    // Get options for the other components that we use.
+    seqOptions.getOptionValues(parser);
+    illuminaOptions.getOptionValues(parser);
+    sangerOptions.getOptionValues(parser);
+    rocheOptions.getOptionValues(parser);
+
+    // Copy in the verbosity flag into the component options.
+    seqOptions.verbosity = verbosity;
+    illuminaOptions.verbosity = verbosity;
+    sangerOptions.verbosity = verbosity;
+    rocheOptions.verbosity = verbosity;
+
+    // Configure simulation of pairs and mates depending on output files.
+    seqOptions.simulateQualities = (endsWith(outFileNameLeft, ".fastq") || endsWith(outFileNameLeft, ".fq"));
+    seqOptions.simulateMatePairs = !empty(outFileNameRight);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonFragmentSequencingOptions::print()
+// ----------------------------------------------------------------------------
+
+void MasonFragmentSequencingOptions::print(std::ostream & out) const
+{
+    out << "MASON FRAGMENT SEQUENCING OPTIONS\n"
+        << "---------------------------------\n"
+        << "\n"
+        << "VERBOSITY        \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "SEED             \t" << seed << "\n"
+        << "\n"
+        << "INPUT FILE NAME  \t" << inputFileName << "\n"
+        << "\n"
+        << "OUTPUT FILE LEFT \t" << outFileNameLeft << "\n"
+        << "OUTPUT FILE RIGHT\t" << outFileNameRight << "\n"
+        << "\n";
+    seqOptions.print(out);
+    out << "\n";
+    illuminaOptions.print(out);
+    out << "\n";
+    sangerOptions.print(out);
+    out << "\n";
+    rocheOptions.print(out);
+}

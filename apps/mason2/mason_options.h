@@ -500,7 +500,7 @@ struct Roche454SequencingOptions
     double k;
 
     // Noise parameters.  We take the default values 0.23 and 0.15 from Metasim.
-    
+
     // The mean of the lognormal distribution for the noise.
     double backgroundNoiseMean;
 
@@ -587,6 +587,86 @@ struct MasonSimulatorOptions
 
     MasonSimulatorOptions() :
             verbosity(0), seed(0), seedSpacing(2048), numThreads(1), chunkSize(64*1024), numFragments(0)
+    {}
+
+    // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser, calls addTextSections() on *Options objects.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.  Calls getOptionValues() on the nested *Option objects.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+// ----------------------------------------------------------------------------
+// Class MasonMaterializerOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for the program mason_materializer.
+
+struct MasonMaterializerOptions
+{
+    // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // Options for the materializer.
+    MaterializerOptions matOptions;
+
+    // Path to output file.
+    seqan::CharString outputFileName;
+    // Separator between contig names and haplotype number.
+    seqan::CharString haplotypeNameSep;
+
+    MasonMaterializerOptions() : verbosity(0)
+    {}
+
+    // Add options to the argument parser.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+// ----------------------------------------------------------------------------
+// Class MasonFragmentSequencingOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for the program mason_frag_simulator.
+
+struct MasonFragmentSequencingOptions
+{
+    // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // The seed to use for random number generation.
+    int seed;
+
+    // Path to input file.
+    seqan::CharString inputFileName;
+
+    // Path to output sequence files for left (and single end) and right reads.
+    seqan::CharString outFileNameLeft, outFileNameRight;
+
+    // Generic sequencing configuration.
+    SequencingOptions seqOptions;
+    // Configuration of the Illumina read simulation.
+    IlluminaSequencingOptions illuminaOptions;
+    // Configuration of the Sanger read simulation.
+    SangerSequencingOptions sangerOptions;
+    // Configuration of the Roche 454 read simulation.
+    Roche454SequencingOptions rocheOptions;
+
+    MasonFragmentSequencingOptions() : verbosity(0), seed(0)
     {}
 
     // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.

@@ -47,41 +47,12 @@
 #include <seqan/vcf_io.h>
 
 #include "vcf_materialization.h"
+#include "mason_options.h"
 #include "mason_types.h"
 
 // ==========================================================================
 // Classes
 // ==========================================================================
-
-// --------------------------------------------------------------------------
-// Class MasonMaterializerOptions
-// --------------------------------------------------------------------------
-
-// This struct stores the options from the command line.
-//
-// You might want to rename this to reflect the name of your app.
-
-struct MasonMaterializerOptions
-{
-    // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
-    int verbosity;
-
-    // The path to the input FASTA file.
-    seqan::CharString inFastaFile;
-    // The path to the input VCF file.
-    seqan::CharString inVcfFile;
-    // The output file name.
-    seqan::CharString outputFilename;
-
-    // Separator for haplotype numbers.
-    seqan::CharString haplotypeNameSep;
-
-    // The seed to use for the RNG.
-    int seed;
-
-    MasonMaterializerOptions() : verbosity(1), seed(0)
-    {}
-};
 
 // --------------------------------------------------------------------------
 // Class MasonMaterializerApp
@@ -100,7 +71,8 @@ public:
     seqan::SequenceStream outStream;
 
     MasonMaterializerApp(MasonMaterializerOptions const & options) :
-            options(options), vcfMat(toCString(options.inFastaFile), toCString(options.inVcfFile))
+            options(options), vcfMat(toCString(options.matOptions.fastaFileName),
+                                     toCString(options.matOptions.vcfFileName))
     {}
 
     int run()
@@ -113,7 +85,7 @@ public:
         try
         {
             vcfMat.init();
-            open(outStream, toCString(options.outputFilename), seqan::SequenceStream::WRITE);
+            open(outStream, toCString(options.outputFileName), seqan::SequenceStream::WRITE);
             if (!isGood(outStream))
                 throw MasonIOException("Could not open output file.");
         }
@@ -135,7 +107,7 @@ public:
         while (vcfMat.materializeNext(seq, rID, hID))
         {
             std::stringstream ssName;
-            ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << hID;
+            ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << (hID + 1);
             std::cerr << " " << ssName.str();
             
             if (writeRecord(outStream, ssName.str(), seq) != 0)
@@ -162,59 +134,21 @@ seqan::ArgumentParser::ParseResult
 parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** argv)
 {
     // Setup ArgumentParser.
-    seqan::ArgumentParser parser("mason_materializers");
+    seqan::ArgumentParser parser("mason_materializer");
     // Set short description, version, and date.
-    setShortDescription(parser, "Materialize VCF into FASTA");
-    setVersion(parser, "2.1");
-    setDate(parser, "June 2013");
-    setCategory(parser, "Simulators");
+    setShortDescription(parser, "VCF Materialization");
+    setVersion(parser, "2.0");
+    setDate(parser, "July 2012");
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-if\\fP \\fIIN.fa\\fP "
-                 "\\fB-of\\fP \\fIOUT.fa\\fP");
+    addUsageLine(parser,
+                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-o\\fP \\IOUT.fa\\fP ");
     addDescription(parser,
-                   "Apply the variants from \\fIIN.vcf\\fP to the reference in \\fIIN.fa\\fP.  The resulting "
-                   "sequence is written to \\fIOUT.fa\\fP");
+                   "Apply variants from \\fIIN.vcf\\fP to \\fIIN.fa\\P and write the results to \\fIout.fa\\fP.");
 
-    // General Options
-    addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
-    addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
-    addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Enable very verbose output."));
-
-    addOption(parser, seqan::ArgParseOption("", "haplotype-name-sep", "Separator between contig and haplotype name.",
-                                            seqan::ArgParseOption::STRING, "STR"));
-    setDefaultValue(parser, "haplotype-name-sep", "/");
-    
-    // Input Output Options
-    addSection(parser, "Input / Output");
-    addOption(parser, seqan::ArgParseOption("if", "in-fasta", "Reference input file",
-                                            seqan::ArgParseOption::INPUTFILE, "IN.fa"));
-    setValidValues(parser, "in-fasta", "fa fasta");
-    setRequired(parser, "in-fasta");
-
-    addOption(parser, seqan::ArgParseOption("iv", "in-vcf", "Variants input file",
-                                            seqan::ArgParseOption::INPUTFILE, "IN.vcf"));
-    setValidValues(parser, "in-vcf", "vcf");
-    setRequired(parser, "in-vcf");
-
-    addOption(parser, seqan::ArgParseOption("of", "out-fasta", "Sequence output file",
-                                            seqan::ArgParseOption::OUTPUTFILE, "OUT.fa"));
-    setValidValues(parser, "out-fasta", "fa fasta");
-    setRequired(parser, "out-fasta");
-
-    // Add Examples Section.
-    addTextSection(parser, "Examples");
-    addListItem(parser,
-                "\\fBmason_materializer\\fP \\fB-iv\\fP \\fIone.vcf\\fP \\fB-if\\fP \\fIhg19.fa\\fP "
-                "\\fB-of\\fP \\fIone.fa\\fP",
-                "Apply the variants in \\fIone.vcf\\fP to the genome in \\fIhg19.fa\\fP and write the results to "
-                "\\fIone.fa\\fP");
-
-    // Add Text Section.
-    addTextSection(parser, "Notes");
-    addText(parser,
-            "All haplotypes of the first individual in the VCF file will be materialized.  All others "
-            "will be ignored.");
+    // Add option and text sections.
+    options.addOptions(parser);
+    options.addTextSections(parser);
     
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
@@ -223,19 +157,7 @@ parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** arg
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res;
 
-    // Extract option values.
-    if (isSet(parser, "quiet"))
-        options.verbosity = 0;
-    if (isSet(parser, "verbose"))
-        options.verbosity = 2;
-    if (isSet(parser, "very-verbose"))
-        options.verbosity = 3;
-
-    getOptionValue(options.inFastaFile, parser, "in-fasta");
-    getOptionValue(options.inVcfFile, parser, "in-vcf");
-    getOptionValue(options.outputFilename, parser, "out-fasta");
-
-    getOptionValue(options.haplotypeNameSep, parser, "haplotype-name-sep");
+    options.getOptionValues(parser);
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -259,23 +181,12 @@ int main(int argc, char const ** argv)
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res == seqan::ArgumentParser::PARSE_ERROR;
 
-    std::cout << "MASON VARIANT MATERIALIZER\n"
+    std::cerr << "MASON VARIANT MATERIALIZER\n"
               << "==========================\n\n";
     
     // Print the command line arguments back to the user.
     if (options.verbosity > 0)
-    {
-        std::cout << "__OPTIONS____________________________________________________________________\n"
-                  << '\n'
-                  << "VERBOSITY    \t" << options.verbosity << '\n'
-                  << "\n"
-                  << "HAPLOTYPE SEP\t" << options.haplotypeNameSep << "\n"
-                  << "\n"
-                  << "INPUT FASTA  \t" << options.inFastaFile << "\n"
-                  << "INPUT VCF    \t" << options.inVcfFile << "\n"
-                  << "OUTPUT FILE  \t" << options.outputFilename << "\n"
-                  << "\n\n";
-    }
+        options.print(std::cerr);
 
     MasonMaterializerApp app(options);
     return app.run();
