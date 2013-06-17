@@ -34,8 +34,6 @@
 // Simulate sequencing process from a genome.
 // ==========================================================================
 
-// TODO(holtgrew): Next step, add sampling position to SequencingSimulationInfo and write out to temporary SAM.
-// TODO(holtgrew): Next step, join temporary SAM, fix SamJoiner for this.
 // TODO(holtgrew): Support using existing FASTQ files for error profiles/N patterns.
 // TODO(holtgrew): Translation from haplotype to reference contig.
 
@@ -171,7 +169,7 @@ public:
         ss.clear();
         ss.str("");
         ss << options->seqOptions.readNamePrefix;
-        if (num == 0)
+        if (num == 0 || forceNoEmbed)
             ss << (fragId + 1);
         else if (num == 1)
             ss << (fragId + 1) << "/1";
@@ -186,7 +184,7 @@ public:
     }
 
     // Simulate next chunk.
-    void run(seqan::Dna5String const & seq, int rID)
+    void run(seqan::Dna5String const & seq, int rID, int hID)
     {
         // Sample fragments.
         fragSampler->generateMany(fragments, rID, length(seq), fragmentIds.size());
@@ -208,20 +206,25 @@ public:
                 seqSimulator->simulatePairedEnd(seqs[i], quals[i], infos[i],
                                                 seqs[i + 1], quals[i + 1], infos[i + 1],
                                                 frag);
+                infos[i].rID = infos[i + 1].rID = rID;
+                infos[i].hID = infos[i + 1].hID = hID;
                 _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
                 _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
-                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will compute
-                // the whole record and reference coordinates when writing out.
-                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_FIRST;
-                alignmentRecords[i].rID = -1;
-                alignmentRecords[i].beginPos = -1;
-                _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
-                alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_LAST;
-                alignmentRecords[i + 1].rID = -1;
-                alignmentRecords[i + 1].beginPos = -1;
+                if (buildAlignments)
+                {
+                    // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
+                    // compute the whole record and reference coordinates when writing out.
+                    _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                    alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                            seqan::BAM_FLAG_FIRST;
+                    alignmentRecords[i].rID = rID;
+                    alignmentRecords[i].beginPos = infos[i].beginPos;
+                    _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
+                    alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                            seqan::BAM_FLAG_LAST;
+                    alignmentRecords[i + 1].rID = rID;
+                    alignmentRecords[i + 1].beginPos = infos[i + 1].beginPos;
+                }
             }
         else
             for (unsigned i = 0; i < fragmentIds.size(); ++i)
@@ -229,13 +232,18 @@ public:
                 TFragment frag(seq, fragments[i].beginPos, fragments[i].endPos);
                 seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag);
                 _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
-                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will compute
-                // the whole record and reference coordinates when writing out.
-                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_FIRST;
-                alignmentRecords[i].rID = -1;
-                alignmentRecords[i].beginPos = -1;
+                if (buildAlignments)
+                {
+                    // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
+                    // compute the whole record and reference coordinates when writing out.
+                    infos[i].rID = rID;
+                    infos[i].hID = hID;
+                    _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                    alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                            seqan::BAM_FLAG_FIRST;
+                    alignmentRecords[i].rID = rID;
+                    alignmentRecords[i].beginPos = infos[i].beginPos;
+                }
             }
     }
 };
@@ -278,6 +286,20 @@ public:
     std::auto_ptr<FastxJoiner<seqan::Fastq> > fastxJoiner;
     // Helper for storing SAM records for each contig/haplotype pair.  In the end, we will join this again.
     IdSplitter alignmentSplitter;
+    // Helper for joining the SAM files.
+    std::auto_ptr<SamJoiner> alignmentJoiner;
+
+    // ----------------------------------------------------------------------
+    // Header used for writing temporary SAM.
+    // ----------------------------------------------------------------------
+
+    typedef seqan::StringSet<seqan::CharString> TNameStore;
+    typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
+    typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
+    TNameStore nameStore;
+    seqan::BamHeader header;
+    TNameStoreCache nameStoreCache;
+    TBamIOContext   bamIOContext;
 
     // ----------------------------------------------------------------------
     // File Output
@@ -291,7 +313,7 @@ public:
     MasonSimulatorApp(MasonSimulatorOptions const & options) :
             options(options), rng(options.seed),
             vcfMat(toCString(options.matOptions.fastaFileName), toCString(options.matOptions.vcfFileName)),
-            contigPicker(rng)
+            contigPicker(rng), nameStoreCache(nameStore), bamIOContext(nameStore, nameStoreCache)
     {}
 
     int run()
@@ -359,7 +381,7 @@ public:
                         break;  // No more work left.
                     
                     // Perform the simulation.
-                    threads[tID].run(contigSeq, rID);
+                    threads[tID].run(contigSeq, rID, hID);
                     
                     // Write out the temporary sequence.
                     SEQAN_OMP_PRAGMA(critical(seq_io))
@@ -367,6 +389,13 @@ public:
                         if (write2(fragmentSplitter.files[rID * haplotypeCount + hID],
                                    threads[tID].ids, threads[tID].seqs, threads[tID].quals, seqan::Fastq()))
                             throw MasonIOException("Could not write out temporary sequence.");
+                        if (!empty(options.outFileNameSam))
+                            for (unsigned i = 0; i < length(threads[tID].alignmentRecords); ++i)
+                            {
+                                if (write2(alignmentSplitter.files[rID * haplotypeCount + hID],
+                                           threads[tID].alignmentRecords[i], bamIOContext, seqan::Sam()) != 0)
+                                    throw MasonIOException("Could not write out temporary alignment record.");
+                            }
                     }
                     
                     SEQAN_OMP_PRAGMA(critical(io_log))
@@ -404,6 +433,22 @@ public:
                 if (writeRecord(outSeqsLeft, id, seq, qual) != 0)
                     throw MasonIOException("Problem joining sequences.");
             }
+        if (!empty(options.outFileNameSam))
+        {
+            alignmentSplitter.reset();
+            alignmentJoiner.reset(new SamJoiner(alignmentSplitter));
+
+            outBamStream.header = alignmentJoiner->header;
+
+            SamJoiner & joiner = *alignmentJoiner.get();  // Shortcut
+            seqan::BamAlignmentRecord record;
+            while (!joiner.atEnd())
+            {
+                joiner.get(record);
+                if (writeRecord(outBamStream, record) != 0)
+                    throw MasonIOException("Problem writing to alignment out file.");
+            }
+        }
         std::cerr << " OK\n";
     }
 
@@ -437,8 +482,42 @@ public:
         // Splitter for alignments, only required when writing out SAM/BAM.
         if (!empty(options.outFileNameSam))
         {
+            // Open alignment splitters.
             alignmentSplitter.numContigs = fragmentIdSplitter.numContigs;
             alignmentSplitter.open();
+            // Build and write out header, fill ref name store.
+            seqan::BamHeaderRecord vnHeaderRecord;
+            vnHeaderRecord.type = seqan::BAM_HEADER_FIRST;
+            appendValue(vnHeaderRecord.tags, seqan::Pair<seqan::CharString>("VN", "1.4"));
+            appendValue(header.records, vnHeaderRecord);
+            resize(header.sequenceInfos, numSeqs(vcfMat.faiIndex));
+            for (unsigned i = 0; i < numSeqs(vcfMat.faiIndex); ++i)
+            {
+                if (!empty(options.matOptions.vcfFileName))
+                    header.sequenceInfos[i].i1 = vcfMat.vcfStream.header.sequenceNames[i];
+                else
+                    header.sequenceInfos[i].i1 = sequenceName(vcfMat.faiIndex, i);
+                unsigned idx = 0;
+                if (!getIdByName(vcfMat.faiIndex, header.sequenceInfos[i].i1, idx))
+                {
+                    std::stringstream ss;
+                    ss << "Could not find " << header.sequenceInfos[i].i1 << " from VCF file in FAI index.";
+                    throw MasonIOException(ss.str());
+                }
+                header.sequenceInfos[i].i2 = sequenceLength(vcfMat.faiIndex, idx);
+                appendValue(nameStore, sequenceName(vcfMat.faiIndex, idx));
+                seqan::BamHeaderRecord seqHeaderRecord;
+                seqHeaderRecord.type = seqan::BAM_HEADER_REFERENCE;
+                appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("SN", header.sequenceInfos[i].i1));
+                std::stringstream ss;
+                ss << header.sequenceInfos[i].i2;
+                appendValue(seqHeaderRecord.tags, seqan::Pair<seqan::CharString>("LN", ss.str().c_str()));
+                appendValue(header.records, seqHeaderRecord);
+            }
+            refresh(nameStoreCache);
+            for (unsigned i = 0; i < alignmentSplitter.files.size(); ++i)
+                if (write2(alignmentSplitter.files[i], header, bamIOContext, seqan::Sam()) != 0)
+                    throw MasonIOException("Could not write out SAM header to temporary file.");
         }
         std::cerr << " OK\n";
 

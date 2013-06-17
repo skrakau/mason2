@@ -49,9 +49,17 @@
 #include <vector>
 #include <iostream>
 
+#include <seqan/bam_io.h>
+#include <seqan/seq_io.h>
+
+#include "mason_types.h"
+
 // ============================================================================
 // Forwards
 // ============================================================================
+
+inline bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
+                                 seqan::BamAlignmentRecord const & rhs);
 
 // ============================================================================
 // Tags, Classes, Enums
@@ -95,45 +103,13 @@ public:
     }
 
     // Open files in the splitter.
-    void open()
-    {
-        close();
-        for (unsigned i = 0; i < numContigs; ++i)
-        {
-            files.push_back(tmpfile());
-            if (!files.back())
-            {
-                std::cerr << "ERROR: Could not open temporary file!\n";
-                exit(1);
-            }
-        }
-    }
+    void open();
 
     // Reset all files in the splitter, ready for reading.
-    void reset()
-    {
-        for (unsigned i = 0; i < files.size(); ++i)
-            if (files[i] != 0)
-            {
-                SEQAN_ASSERT(!ferror(files[i]));
-                int res = fseek(files[i], 0L, SEEK_SET);
-                (void)res;
-                SEQAN_ASSERT_EQ(res, 0);
-                SEQAN_ASSERT(!ferror(files[i]));
-            }
-    }
+    void reset();
 
     // Close splitter.
-    void close()
-    {
-        for (unsigned i = 0; i < files.size(); ++i)
-            if (files[i])
-            {
-                fclose(files[i]);
-                files[i] = 0;
-            }
-        files.clear();
-    }
+    void close();
 };
 
 // ----------------------------------------------------------------------------
@@ -248,16 +224,6 @@ public:
 
 // Compare two BAM alignment records by query name, tie is broken by first/last flag, first < last.
 
-bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
-                          seqan::BamAlignmentRecord const & rhs)
-{
-    seqan::Lexical<> cmp(lhs.qName, rhs.qName);
-    if (isLess(cmp) || (isEqual(cmp) && hasFlagFirst(lhs)))
-        return true;
-    return false;
-}
-
-#if 0
 class SamJoiner
 {
 public:
@@ -275,10 +241,18 @@ public:
     // Record reads, one for each input file.
     std::vector<TReader *> readers;
 
-    SamJoiner() : splitter(), numActive(0)
+    // One of the identical BAM headers.
+    seqan::BamHeader header;
+    // The reference sequence name store and cache.
+    seqan::StringSet<seqan::CharString> nameStore;
+    seqan::NameStoreCache<seqan::StringSet<seqan::CharString> > nameStoreCache;
+    seqan::BamIOContext<seqan::StringSet<seqan::CharString> > context;
+
+    SamJoiner() : splitter(), numActive(0), nameStoreCache(nameStore), context(nameStore, nameStoreCache)
     {}
 
-    SamJoiner(IdSplitter & splitter) : splitter(&splitter), numActive(0)
+    SamJoiner(IdSplitter & splitter) :
+            splitter(&splitter), numActive(0), nameStoreCache(nameStore), context(nameStore, nameStoreCache)
     {
         init();
     }
@@ -290,30 +264,9 @@ public:
         readers.clear();
     }
 
-    void init()
-    {
-        resize(records, splitter->files.size());
-        active.resize(splitter->files.size());
+    void init();
 
-        for (unsigned i = 0; i < splitter->files.size(); ++i)
-        {
-            readers.push_back(new TReader(splitter->files[i]));
-            active[i] = _loadNext(records[i], i);
-            numActive += (active[i] != false);
-        }
-    }
-
-    bool _loadNext(seqan::BamAlignmentRecord & record, unsigned idx)
-    {
-        if (seqan::atEnd(*readers[idx]))
-            return false;
-        if (readRecord(record, *readers[idx], seqan::Sam()) != 0)
-        {
-            std::cerr << "ERROR: Problem reading temporary data.\n";
-            exit(1);
-        }
-        return true;
-    }
+    bool _loadNext(seqan::BamAlignmentRecord & record, unsigned idx);
 
     bool atEnd() const
     {
@@ -321,39 +274,8 @@ public:
     }
 
     // Get next BAM alignment record to lhs.  If it is paired-end, load the second mate as well.
-    int get(seqan::BamAlignmentRecord & lhs, seqan::BamAlignmentRecord & rhs)
-    {
-        unsigned idx = seqan::maxValue<unsigned>();
-        for (unsigned i = 0; i < length(records); ++i)
-        {
-            if (!active[i])
-                continue;
-            if (idx == seqan::maxValue<unsigned>() || ltBamAlignmentRecord(records[i], records[idx]))
-                idx = i;
-        }
-        if (idx == seqan::maxValue<unsigned>())
-            return 1;
-
-        // We use double-buffering and the input parameters as buffers.
-        using std::swap;
-        if (hasFlagMultiple(records[idx]))
-        {
-            active[idx] = _loadNext(rhs, idx);
-            SEQAN_ASSERT_MSG(active[idx], "There is one more to load.");
-            active[idx] = _loadNext(lhs, idx);
-            swap(lhs, records[idx]);
-        }
-        else
-        {
-            active[idx] = _loadNext(lhs, idx);
-            swap(lhs, records[idx]);
-        }
-        numActive -= !active[idx];
-
-        return 0;
-    }
+    int get(seqan::BamAlignmentRecord & record);
 };
-#endif
 
 // ============================================================================
 // Metafunctions
@@ -362,5 +284,18 @@ public:
 // ============================================================================
 // Functions
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Function ltBamAlignmentRecord()
+// ----------------------------------------------------------------------------
+
+inline bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
+                                 seqan::BamAlignmentRecord const & rhs)
+{
+    seqan::Lexical<> cmp(lhs.qName, rhs.qName);
+    if (isLess(cmp) || (isEqual(cmp) && hasFlagFirst(lhs)))
+        return true;
+    return false;
+}
 
 #endif  // #ifndef SANDBOX_MASON2_APPS_MASON2_EXTERNAL_SPLIT_MERGE_H_

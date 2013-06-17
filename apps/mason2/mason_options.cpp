@@ -137,7 +137,7 @@ void MaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
     setRequired(parser, "input-reference");
 
     addOption(parser, seqan::ArgParseOption("iv", "input-vcf", "Path to the VCF file with variants to apply.",
-                                            seqan::ArgParseOption::STRING, "IN.vcf"));
+                                            seqan::ArgParseOption::INPUTFILE, "IN.vcf"));
     setValidValues(parser, "input-vcf", "vcf");
 }
 

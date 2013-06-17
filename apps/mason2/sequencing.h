@@ -84,13 +84,20 @@ struct SequencingSimulationInfo
     // Whether or not this comes from the forward strand.
     bool isForward;
 
-    SequencingSimulationInfo() : isForward(false)
+    // The contig and haplotype ID.
+    int rID, hID;
+
+    // The begin position of the sequence.
+    int beginPos;
+
+    SequencingSimulationInfo() : isForward(false), rID(-1), hID(-1), beginPos(-1)
     {}
 
     template <typename TStream>
     void serialize(TStream & stream) const
     {
-        stream << "SAMPLE_SEQUENCE=" << sampleSequence << " CIGAR=";
+        stream << "SEQUENCE=" << rID << " HAPLOTYP=" << hID << " BEGIN_POS=" << beginPos
+               << " SAMPLE_SEQUENCE=" << sampleSequence << " CIGAR=";
         for (unsigned i = 0; i < length(cigar); ++i)
             stream << cigar[i].count << cigar[i].operation;
         stream << " STRAND=" << (isForward ? 'F' : 'R');

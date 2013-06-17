@@ -233,17 +233,20 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
     if (strand == REVERSE)
         reverse(quals);
 
-    // Write out sequencing information info if configured to do so.
+    // Write out extended sequencing information info if configured to do so.  We always write out the sample position
+    // and alignment information.
+    info.cigar = cigar;
+    unsigned len = 0;
+    _getLengthInRef(cigar, len);
+    info.beginPos = (dir == LEFT) ? beginPosition(frag) : (beginPosition(frag) + length(frag) - len);
+    info.isForward = (strand == FORWARD);
+
     if (seqOptions->embedReadInfo)
     {
-        info.cigar = cigar;
-        unsigned len = 0;
-        _getLengthInRef(cigar, len);
         if (dir == LEFT)
             info.sampleSequence = prefix(frag, len);
         else
             info.sampleSequence = suffix(frag, length(frag) - len);
-        info.isForward = (strand == FORWARD);
         if (strand == REVERSE)
             reverseComplement(info.sampleSequence);
     }

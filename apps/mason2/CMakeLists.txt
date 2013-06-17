@@ -59,6 +59,8 @@ add_executable (mason_materializer
                 genomic_variants.h)
 add_executable (mason_simulator
                 mason_simulator.cpp
+                external_split_merge.h
+                external_split_merge.cpp
                 mason_types.h
                 mason_options.h
                 mason_options.cpp
