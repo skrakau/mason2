@@ -93,30 +93,30 @@ void SangerSequencingSimulator::simulateRead(
 {
     // TODO(holtgrew): Pick better names for read length here.
     // Pick sampled length.
-    unsigned readLength = this->readLength();
+    unsigned sampleLength = this->readLength();
 
-    if (readLength > length(frag))
+    if (sampleLength > length(frag))
     {
         throw std::runtime_error("Sanger read is too long, increase fragment length");
     }
 
     // Simulate CIGAR string.
     TCigarString cigar;
-    this->_simulateCigar(cigar, readLength);
+    this->_simulateCigar(cigar, sampleLength);
 
     // Simulate sequence (materialize mismatches and insertions).
     typedef seqan::ModifiedString<seqan::ModifiedString<TFragment, seqan::ModView<seqan::FunctorComplement<seqan::Dna5> > >, seqan::ModReverse> TRevCompFrag;
     if ((dir == LEFT) && (strand == FORWARD))
-        _simulateSequence(seq, rng, prefix(frag, readLength), cigar);
+        _simulateSequence(seq, rng, prefix(frag, sampleLength), cigar);
     else if ((dir == LEFT) && (strand == REVERSE))
-        _simulateSequence(seq, rng, TRevCompFrag(prefix(frag, readLength)), cigar);
+        _simulateSequence(seq, rng, TRevCompFrag(prefix(frag, sampleLength)), cigar);
     else if ((dir == RIGHT) && (strand == FORWARD))
-        _simulateSequence(seq, rng, suffix(frag, length(frag) - readLength), cigar);
+        _simulateSequence(seq, rng, suffix(frag, length(frag) - sampleLength), cigar);
     else  // ((dir == RIGHT) && (strand == REVERSE))
-        _simulateSequence(seq, rng, TRevCompFrag(suffix(frag, length(frag) - readLength)), cigar);
+        _simulateSequence(seq, rng, TRevCompFrag(suffix(frag, length(frag) - sampleLength)), cigar);
 
     // Simulate Qualities.
-    this->_simulateQualities(quals, cigar, readLength);
+    this->_simulateQualities(quals, cigar, sampleLength);
 
     // Reverse qualities if necessary.
     if (strand == REVERSE)
@@ -144,14 +144,14 @@ void SangerSequencingSimulator::simulateRead(
 
 // Simulate CIGAR string.  We can do this with position specific parameters only and thus independent of any
 // context.
-void SangerSequencingSimulator::_simulateCigar(TCigarString & cigar, unsigned readLength)
+void SangerSequencingSimulator::_simulateCigar(TCigarString & cigar, unsigned sampleLength)
 {
     clear(cigar);
 
-    for (unsigned i = 0; i < readLength;)
+    for (unsigned i = 0; i < sampleLength;)
     {
         double x = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<double> >(0, 1));
-        double pos = 1.0 * i / (readLength - 1);
+        double pos = 1.0 * i / (sampleLength - 1);
         double pMismatch = sangerOptions.probabilityMismatchBegin + pos * (sangerOptions.probabilityMismatchEnd - sangerOptions.probabilityMismatchBegin);
         double pInsert   = sangerOptions.probabilityInsertBegin + pos * (sangerOptions.probabilityInsertEnd - sangerOptions.probabilityInsertBegin);
         double pDelete   = sangerOptions.probabilityDeleteBegin + pos * (sangerOptions.probabilityDeleteEnd - sangerOptions.probabilityDeleteBegin);
@@ -161,16 +161,26 @@ void SangerSequencingSimulator::_simulateCigar(TCigarString & cigar, unsigned re
         // insertion/deletion pairs cancel each other out.  We count i up to the input read length, thus using the
         // "second" member of appendOperation()'s result.
 
-        // TODO(holtgrew): No indels at beginning or end of read.
-
         if (x < pMatch)  // match
+        {
             i += appendOperation(cigar, 'M').second;
+        }
         else if (x < pMatch + pMismatch)  // point polymorphism
+        {
             i += appendOperation(cigar, 'X').second;
+        }
         else if (x < pMatch + pMismatch + pInsert) // insertion
+        {
+            if (i == 0 || i + 1 == sampleLength)
+                continue;  // no indel at beginning/end
             i += appendOperation(cigar, 'I').second;
+        }
         else  // deletion
+        {
+            if (i == 0 || i + 1 == sampleLength)
+                continue;  // no indel at beginning/end
             i += appendOperation(cigar, 'D').second;
+        }
     }
 }
 

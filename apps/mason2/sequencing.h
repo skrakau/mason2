@@ -237,7 +237,7 @@ public:
     // Initialize the threshold matrix.
     void _initModel();
 
-    // Pick read length for the fragment to be simulated.
+    // Pick read length for the sequence to be sampled from fragments.
     virtual unsigned readLength();
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
@@ -263,7 +263,7 @@ public:
             SequencingSimulator(rng, seqOptions), sangerOptions(sangerOptions)
     {}
 
-    // Pick read length for the fragment to be simulated.
+    // Pick read length for the sequence to be sampled from fragments.
     virtual unsigned readLength();
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
@@ -272,7 +272,7 @@ public:
 
     // Simulate CIGAR string.  We can do this with position specific parameters only and thus independent of any
     // context.
-    void _simulateCigar(TCigarString & cigar, unsigned readLength);
+    void _simulateCigar(TCigarString & cigar, unsigned sampleLength);
 
     void _simulateQualities(TQualities & quals, TCigarString const & cigar, unsigned sampleLength);
 };

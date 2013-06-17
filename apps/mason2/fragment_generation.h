@@ -39,8 +39,6 @@
 // biases for PCR or fragment selection.
 // ==========================================================================
 
-// TODO(holtgrew): We should not load the whole genome into memory, especially bad if we have multiple haplotypes and methylation levels.
-
 #ifndef SANDBOX_MASON2_APPS_MASON2_FRAGMENT_GENERATION_H_
 #define SANDBOX_MASON2_APPS_MASON2_FRAGMENT_GENERATION_H_
 

@@ -212,7 +212,10 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
     unsigned lenInRef = 0;
     _getLengthInRef(cigar, lenInRef);
 
-    // TODO(holtgrew): Check that the CIGAR string does not need more sequence than we have in frag.
+    if (lenInRef > length(frag))
+    {
+        throw std::runtime_error("Illumina read is too long, increase fragment length");
+    }
 
     // Simulate sequence (materialize mismatches and insertions).
     typedef seqan::ModifiedString<seqan::ModifiedString<TFragment, seqan::ModView<seqan::FunctorComplement<seqan::Dna5> > >, seqan::ModReverse> TRevCompFrag;

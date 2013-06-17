@@ -253,8 +253,8 @@ void Roche454SequencingSimulator::simulateRead(
     clear(quals);
 
     // Compute read length and check whether it fits in fragment.
-    unsigned readLength = this->readLength();
-    if (readLength > length(frag))
+    unsigned sampleLength = this->readLength();
+    if (sampleLength > length(frag))
     {
         throw std::runtime_error("454 read is too long, increase fragment length");
     }
@@ -262,15 +262,15 @@ void Roche454SequencingSimulator::simulateRead(
     // Get a copy of the to be sequenced base stretch.
     TRead haplotypeInfix;
     if (dir == LEFT)
-        haplotypeInfix = prefix(frag, readLength);
+        haplotypeInfix = prefix(frag, sampleLength);
     else
-        haplotypeInfix = suffix(frag, length(frag) - readLength);
+        haplotypeInfix = suffix(frag, length(frag) - sampleLength);
     if (strand == REVERSE)
         reverseComplement(haplotypeInfix);
 
     // In the flow cell simulation, we will simulate light intensities which will be stored in observedIntensities.
     seqan::String<double> observedIntensities;
-    reserve(observedIntensities, 4 * readLength);
+    reserve(observedIntensities, 4 * sampleLength);
     seqan::Dna5String observedBases;
     // We also store the real homopolymer length.
     seqan::String<unsigned> realBaseCount;
@@ -286,7 +286,7 @@ void Roche454SequencingSimulator::simulateRead(
         ++homopolymerLength;
 
     // Simulate flowcell.
-    for (unsigned i = 0, j = 0; i < readLength; ++j, j = j % 4)  // i indicates first pos of current homopolymer, j indicates flow phase
+    for (unsigned i = 0, j = 0; i < sampleLength; ++j, j = j % 4)  // i indicates first pos of current homopolymer, j indicates flow phase
     {
         if (ordValue(homopolymerType) == j)
         {
