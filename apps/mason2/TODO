@@ -6,6 +6,7 @@ URGENT
 
 mason_simulator
 
+ * written quality profiles weird, maybe also errors?
  * contig-wise VCF import, to interval trees
  * SAM from original without SVs
  * SAM from original with indel SVs
