@@ -52,59 +52,6 @@
 // ==========================================================================
 
 // --------------------------------------------------------------------------
-// Class ContigPicker
-// --------------------------------------------------------------------------
-
-// Distribute to contig and haplotypes.
-//
-// Contigs are picked with a probability proportional to their length and haplotypes are picked uniformly at random.
-
-class ContigPicker
-{
-public:
-    // The random number generator to use.
-    TRng & rng;
-
-    // The length of the contigs.
-    std::vector<__int64> lengthSums;
-    // The number of haplotypes.
-    int numHaplotypes;
-    
-    ContigPicker(TRng & rng) : rng(rng)
-    {}
-
-    // Return a position (contig, haplotype) to distribute the read to.
-    std::pair<int, int> pick()
-    {
-        // Pick reference id.
-        int rID = 0;
-        if (lengthSums.size() > 1u)
-        {
-            seqan::Pdf<seqan::Uniform<__int64> > pdf(0, lengthSums.back() - 1);
-            __int64 x = pickRandomNumber(rng, pdf);
-            for (unsigned i = 0; i < lengthSums.size(); ++i)
-            {
-                if (x >= lengthSums[i])
-                    rID = i + 1;
-                if (x < lengthSums[i])
-                    break;
-            }
-        }
-
-        // Pick haplotype id.
-        int hID = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, numHaplotypes - 1));
-
-        return std::make_pair(rID, hID);
-    }
-
-    // Convert a position (contig, haplotype) to an integer.
-    int toId(std::pair<int, int> pos) const
-    {
-        return pos.first * numHaplotypes + pos.second;
-    }            
-};
-
-// --------------------------------------------------------------------------
 // Class ReadSimulatorThread
 // --------------------------------------------------------------------------
 
@@ -183,6 +130,62 @@ public:
         str = ss.str();
     }
 
+    void _simulatePairedEnd(seqan::Dna5String const & seq, int rID, int hID)
+    {
+        std::stringstream ss;
+
+        for (unsigned i = 0; i < 2 * fragmentIds.size(); i += 2)
+        {
+            TFragment frag(seq, fragments[i / 2].beginPos, fragments[i / 2].endPos);
+            seqSimulator->simulatePairedEnd(seqs[i], quals[i], infos[i],
+                                            seqs[i + 1], quals[i + 1], infos[i + 1],
+                                            frag);
+            infos[i].rID = infos[i + 1].rID = rID;
+            infos[i].hID = infos[i + 1].hID = hID;
+            _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
+            _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
+            if (buildAlignments)
+            {
+                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
+                // compute the whole record and reference coordinates when writing out.
+                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_FIRST;
+                alignmentRecords[i].rID = rID;
+                alignmentRecords[i].beginPos = infos[i].beginPos;
+                _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
+                alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_LAST;
+                alignmentRecords[i + 1].rID = rID;
+                alignmentRecords[i + 1].beginPos = infos[i + 1].beginPos;
+            }
+        }
+    }
+
+    void _simulateSingleEnd(seqan::Dna5String const & seq, int rID, int hID)
+    {
+        std::stringstream ss;
+
+        for (unsigned i = 0; i < fragmentIds.size(); ++i)
+        {
+            TFragment frag(seq, fragments[i].beginPos, fragments[i].endPos);
+            seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag);
+            _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
+            if (buildAlignments)
+            {
+                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
+                // compute the whole record and reference coordinates when writing out.
+                infos[i].rID = rID;
+                infos[i].hID = hID;
+                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                        seqan::BAM_FLAG_FIRST;
+                alignmentRecords[i].rID = rID;
+                alignmentRecords[i].beginPos = infos[i].beginPos;
+            }
+        }
+    }
+
     // Simulate next chunk.
     void run(seqan::Dna5String const & seq, int rID, int hID)
     {
@@ -197,54 +200,11 @@ public:
         infos.resize(seqCount);
         if (buildAlignments)
             alignmentRecords.resize(seqCount);
-        std::stringstream ss;  // for conversion
         // TODO(holtgrew): Optimize number of virtual function calls.
         if (options->seqOptions.simulateMatePairs)
-            for (unsigned i = 0; i < 2 * fragmentIds.size(); i += 2)
-            {
-                TFragment frag(seq, fragments[i / 2].beginPos, fragments[i / 2].endPos);
-                seqSimulator->simulatePairedEnd(seqs[i], quals[i], infos[i],
-                                                seqs[i + 1], quals[i + 1], infos[i + 1],
-                                                frag);
-                infos[i].rID = infos[i + 1].rID = rID;
-                infos[i].hID = infos[i + 1].hID = hID;
-                _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
-                _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
-                if (buildAlignments)
-                {
-                    // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
-                    // compute the whole record and reference coordinates when writing out.
-                    _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                    alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                            seqan::BAM_FLAG_FIRST;
-                    alignmentRecords[i].rID = rID;
-                    alignmentRecords[i].beginPos = infos[i].beginPos;
-                    _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
-                    alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                            seqan::BAM_FLAG_LAST;
-                    alignmentRecords[i + 1].rID = rID;
-                    alignmentRecords[i + 1].beginPos = infos[i + 1].beginPos;
-                }
-            }
+            _simulatePairedEnd(seq, rID, hID);
         else
-            for (unsigned i = 0; i < fragmentIds.size(); ++i)
-            {
-                TFragment frag(seq, fragments[i].beginPos, fragments[i].endPos);
-                seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag);
-                _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
-                if (buildAlignments)
-                {
-                    // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
-                    // compute the whole record and reference coordinates when writing out.
-                    infos[i].rID = rID;
-                    infos[i].hID = hID;
-                    _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                    alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                            seqan::BAM_FLAG_FIRST;
-                    alignmentRecords[i].rID = rID;
-                    alignmentRecords[i].beginPos = infos[i].beginPos;
-                }
-            }
+            _simulateSingleEnd(seq, rID, hID);
     }
 };
 
@@ -396,7 +356,7 @@ public:
 
     void _simulateReadsJoin()
     {
-        std::cerr << "Joining temporary files ...";
+        std::cerr << "\nJoining temporary files ...";
         fragmentSplitter.reset();
         fastxJoiner.reset(new FastxJoiner<seqan::Fastq>(fragmentSplitter));
         FastxJoiner<seqan::Fastq> & joiner = *fastxJoiner.get();  // Shortcut

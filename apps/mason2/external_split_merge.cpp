@@ -127,3 +127,29 @@ int SamJoiner::get(seqan::BamAlignmentRecord & record)
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Function ContigPicker::pick()
+// ---------------------------------------------------------------------------
+
+std::pair<int, int> ContigPicker::pick()
+{
+    // Pick reference id.
+    int rID = 0;
+    if (lengthSums.size() > 1u)
+    {
+        seqan::Pdf<seqan::Uniform<__int64> > pdf(0, lengthSums.back() - 1);
+        __int64 x = pickRandomNumber(rng, pdf);
+        for (unsigned i = 0; i < lengthSums.size(); ++i)
+        {
+            if (x >= lengthSums[i])
+                rID = i + 1;
+            if (x < lengthSums[i])
+                break;
+        }
+    }
+
+    // Pick haplotype id.
+    int hID = pickRandomNumber(rng, seqan::Pdf<seqan::Uniform<int> >(0, numHaplotypes - 1));
+
+    return std::make_pair(rID, hID);
+}

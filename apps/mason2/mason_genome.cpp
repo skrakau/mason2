@@ -198,7 +198,7 @@ int main(int argc, char const ** argv)
     std::cout << "__SIMULATING GENOME__________________________________________________________\n"
               << "\n";
 
-    SimulateGenomeOptions simOptions;
+    MasonSimulateGenomeOptions simOptions;
     simOptions.contigLengths = options.contigLengths;
     simOptions.seed = options.seed;
     if (simulateGenome(toCString(options.outputFilename), simOptions) != 0)

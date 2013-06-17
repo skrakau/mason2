@@ -47,6 +47,7 @@
 #include <seqan/vcf_io.h>
 
 #include "vcf_materialization.h"
+#include "mason_types.h"
 
 // ==========================================================================
 // Classes

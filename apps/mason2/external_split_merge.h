@@ -65,6 +65,38 @@ inline bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
 // Tags, Classes, Enums
 // ============================================================================
 
+// --------------------------------------------------------------------------
+// Class ContigPicker
+// --------------------------------------------------------------------------
+
+// Distribute to contig and haplotypes.
+//
+// Contigs are picked with a probability proportional to their length and haplotypes are picked uniformly at random.
+
+class ContigPicker
+{
+public:
+    // The random number generator to use.
+    TRng & rng;
+
+    // The length of the contigs.
+    std::vector<__int64> lengthSums;
+    // The number of haplotypes.
+    int numHaplotypes;
+    
+    ContigPicker(TRng & rng) : rng(rng)
+    {}
+
+    // Return a position (contig, haplotype) to distribute the read to.
+    std::pair<int, int> pick();
+
+    // Convert a position (contig, haplotype) to an integer.
+    int toId(std::pair<int, int> pos) const
+    {
+        return pos.first * numHaplotypes + pos.second;
+    }            
+};
+
 // ----------------------------------------------------------------------------
 // Class IdSplitter
 // ----------------------------------------------------------------------------
@@ -155,61 +187,17 @@ public:
         readers.clear();
     }
 
-    void _init()
-    {
-        resize(ids, splitter->files.size());
-        resize(seqs, splitter->files.size());
-        resize(quals, splitter->files.size());
-        active.resize(splitter->files.size());
-
-        for (unsigned i = 0; i < splitter->files.size(); ++i)
-        {
-            readers.push_back(new TReader(splitter->files[i]));
-            active[i] = _loadNext(ids[i], seqs[i], quals[i], i);
-            numActive += (active[i] != false);
-        }
-    }
+    void _init();
 
     template <typename TSeq>
-    bool _loadNext(TSeq & id, TSeq & seq, TSeq & qual, unsigned idx)
-    {
-        if (seqan::atEnd(*readers[idx]))
-            return false;
-        if (readRecord(id, seq, qual, *readers[idx], TTag()) != 0)
-        {
-            std::cerr << "ERROR: Problem reading temporary data.\n";
-            exit(1);
-        }
-        return true;
-    }
+    bool _loadNext(TSeq & id, TSeq & seq, TSeq & qual, unsigned idx);
 
     bool atEnd() const
     {
         return (numActive == 0);
     }
 
-    int get(seqan::CharString & id, seqan::CharString & seq, seqan::CharString & qual)
-    {
-        unsigned idx = seqan::maxValue<unsigned>();
-        for (unsigned i = 0; i < length(ids); ++i)
-        {
-            if (!active[i])
-                continue;
-            if (idx == seqan::maxValue<unsigned>() || ids[i] < ids[idx])
-                idx = i;
-        }
-        if (idx == seqan::maxValue<unsigned>())
-            return 1;
-
-        // We use double-buffering and the input parameters as buffers.
-        active[idx] = _loadNext(id, seq, qual, idx);
-        swap(id, ids[idx]);
-        swap(seq, seqs[idx]);
-        swap(qual, quals[idx]);
-        numActive -= !active[idx];
-
-        return 0;
-    }
+    int get(seqan::CharString & id, seqan::CharString & seq, seqan::CharString & qual);
 };
 
 // ----------------------------------------------------------------------------
@@ -284,6 +272,72 @@ public:
 // ============================================================================
 // Functions
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Function FastxJoiner::_init()
+// ----------------------------------------------------------------------------
+
+template <typename TTag>
+void FastxJoiner<TTag>::_init()
+{
+    resize(ids, splitter->files.size());
+    resize(seqs, splitter->files.size());
+    resize(quals, splitter->files.size());
+    active.resize(splitter->files.size());
+
+    for (unsigned i = 0; i < splitter->files.size(); ++i)
+    {
+        readers.push_back(new TReader(splitter->files[i]));
+        active[i] = _loadNext(ids[i], seqs[i], quals[i], i);
+        numActive += (active[i] != false);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function FastxJoiner::_loadNext()
+// ----------------------------------------------------------------------------
+
+template <typename TTag>
+template <typename TSeq>
+bool FastxJoiner<TTag>::_loadNext(TSeq & id, TSeq & seq, TSeq & qual, unsigned idx)
+{
+    if (seqan::atEnd(*readers[idx]))
+        return false;
+    if (readRecord(id, seq, qual, *readers[idx], TTag()) != 0)
+    {
+        std::cerr << "ERROR: Problem reading temporary data.\n";
+        exit(1);
+    }
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+// Function FastxJoiner::get()
+// ----------------------------------------------------------------------------
+
+template <typename TTag>
+int FastxJoiner<TTag>::get(seqan::CharString & id, seqan::CharString & seq, seqan::CharString & qual)
+{
+    unsigned idx = seqan::maxValue<unsigned>();
+    for (unsigned i = 0; i < length(ids); ++i)
+    {
+        if (!active[i])
+            continue;
+        if (idx == seqan::maxValue<unsigned>() || ids[i] < ids[idx])
+            idx = i;
+    }
+    if (idx == seqan::maxValue<unsigned>())
+        return 1;
+
+    // We use double-buffering and the input parameters as buffers.
+    active[idx] = _loadNext(id, seq, qual, idx);
+    swap(id, ids[idx]);
+    swap(seq, seqs[idx]);
+    swap(qual, quals[idx]);
+    numActive -= !active[idx];
+
+    return 0;
+}
 
 // ----------------------------------------------------------------------------
 // Function ltBamAlignmentRecord()

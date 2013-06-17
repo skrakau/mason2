@@ -36,27 +36,45 @@ add_definitions (${SEQAN_DEFINITIONS})
 # Update the list of file names below if you add source files to your application.
 add_executable (mason_genome
                 mason_genome.cpp
-                simulate_genome.h)
+                simulate_genome.h
+                simulate_genome.cpp
+                )
+
+# Fragment sampling from the genome.
 add_executable (mason_fragments
                 mason_fragments.cpp
                 fragment_generation.h
                 external_split_merge.h)
-add_executable (mason_sequencing
+
+# Simulate sequencing of fragments.
+add_executable (mason_frag_sequencing
                 sequencing.h
-                mason_sequencing.cpp
+                mason_frag_sequencing.cpp
                 simulate_base.cpp
                 simulate_sanger.cpp
                 simulate_454.cpp
                 simulate_illumina.cpp)
+
+# Simulation of structural variants into FASTA sequences. 
 add_executable (mason_variator
                 mason_variator.cpp
                 variation_size_tsv.h
                 genomic_variants.h
-                methylation_levels.h)
+                genomic_variants.cpp
+                methylation_levels.h
+                methylation_levels.cpp)
+
+# The materializer reads in FASTA and VCF and writes out FASTA.
 add_executable (mason_materializer
                 mason_materializer.cpp
                 vcf_materialization.h
-                genomic_variants.h)
+                vcf_materialization.cpp
+                genomic_variants.h
+                genomic_variants.cpp
+                methylation_levels.h
+                methylation_levels.cpp)
+
+# The end-to-end read simulator includes materialization and fragment sampling.
 add_executable (mason_simulator
                 mason_simulator.cpp
                 external_split_merge.h
@@ -68,12 +86,18 @@ add_executable (mason_simulator
                 simulate_base.cpp
                 simulate_illumina.cpp
                 simulate_454.cpp
-                simulate_sanger.cpp)
+                simulate_sanger.cpp
+                vcf_materialization.h
+                vcf_materialization.cpp
+                genomic_variants.h
+                genomic_variants.cpp
+                methylation_levels.h
+                methylation_levels.cpp)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES})
 target_link_libraries (mason_fragments ${SEQAN_LIBRARIES})
-target_link_libraries (mason_sequencing ${SEQAN_LIBRARIES})
+target_link_libraries (mason_frag_sequencing ${SEQAN_LIBRARIES})
 target_link_libraries (mason_variator ${SEQAN_LIBRARIES})
 target_link_libraries (mason_materializer ${SEQAN_LIBRARIES})
 target_link_libraries (mason_simulator ${SEQAN_LIBRARIES})

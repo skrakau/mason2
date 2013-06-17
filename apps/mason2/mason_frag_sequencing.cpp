@@ -122,9 +122,9 @@ seqan::ArgumentParser::ParseResult
 parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
 {
     // Setup ArgumentParser.
-    seqan::ArgumentParser parser("mason_seqencing");
+    seqan::ArgumentParser parser("mason_frag_seqencing");
     // Set short description, version, and date.
-    setShortDescription(parser, "Sequencing Simulation");
+    setShortDescription(parser, "Fragment Sequencing Simulation");
     setVersion(parser, "2.1");
     setDate(parser, "March 2013");
     setCategory(parser, "Simulators");
@@ -502,18 +502,18 @@ parseCommandLine(MasonSequencingOptions & options, int argc, char const ** argv)
     // Add Examples Section.
     addTextSection(parser, "Examples");
 
-    addListItem(parser, "\\fBmason_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads.fa\\fP",
+    addListItem(parser, "\\fBmason_frag_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads.fa\\fP",
                 "Given the fragments from \\fIfragments.fa\\fP, perform single-end sequencing and write the "
                 "results to the FASTA file \\fIreads.fa\\fP.  Illumina sequencing is simulated using its default "
                 "settings.");
 
-    addListItem(parser, "\\fBmason_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads_1.fq\\fP "
+    addListItem(parser, "\\fBmason_frag_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads_1.fq\\fP "
                 "\\fB-r\\fP \\fIreads_2.fq\\fP",
                 "Given the fragments from \\fIfragments.fa\\fP, perform paired-end sequencing and write the "
                 "results to the FASTQ files \\fIreads_1.fq\\fP and \\fIreads_2.fq\\fP.  Illumina sequencing is "
                 "simulated using its default settings.");
 
-    addListItem(parser, "\\fBmason_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads_1.fq\\fP "
+    addListItem(parser, "\\fBmason_frag_sequencing\\fP \\fB-i\\fP \\fIfragments.fa\\fP \\fB-o\\fP \\fIreads_1.fq\\fP "
                 "\\fB-r\\fP \\fIreads_2.fq\\fP \\fB-t\\fP \\fI454\\fP",
                 "Given the fragments from \\fIfragments.fa\\fP, perform paired-end sequencing and write the "
                 "results to the FASTQ files \\fIreads_1.fq\\fP and \\fIreads_2.fq\\fP.  454 sequencing is used "

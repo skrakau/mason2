@@ -62,6 +62,26 @@
 // ============================================================================
 
 // ----------------------------------------------------------------------------
+// Class MasonSimulateGenomeOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for simulating genomes.
+//
+// This is separate from the application options of the simulate_genome program to allow simulation from other parts of
+// the program when necessary.
+
+struct MasonSimulateGenomeOptions
+{
+    // A list of the lengths of the contigs to simulate.
+    seqan::String<int> contigLengths;
+    // The seed to use for random number generation.
+    int seed;
+
+    MasonSimulateGenomeOptions() : seed(0)
+    {}
+};
+
+// ----------------------------------------------------------------------------
 // Class MaterializerOptions
 // ----------------------------------------------------------------------------
 
