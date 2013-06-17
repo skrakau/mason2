@@ -35,10 +35,14 @@ def main(source_base, binary_base):
     # Auto-detect the binary path.
     # ============================================================
 
+    path_to_genome = app_tests.autolocateBinary(
+      binary_base, 'sandbox/mason2/apps/mason2', 'mason_genome')
     path_to_variator = app_tests.autolocateBinary(
       binary_base, 'sandbox/mason2/apps/mason2', 'mason_variator')
     path_to_materializer = app_tests.autolocateBinary(
       binary_base, 'sandbox/mason2/apps/mason2', 'mason_materializer')
+    path_to_simulator = app_tests.autolocateBinary(
+      binary_base, 'sandbox/mason2/apps/mason2', 'mason_simulator')
 
     # ============================================================
     # Built TestConf list.
@@ -59,6 +63,47 @@ def main(source_base, binary_base):
             '', right=True),
         app_tests.ReplaceTransform(ph.temp_dir + os.sep, '', right=True),
         ]
+
+    # ============================================================
+    # Test mason_genome
+    # ============================================================
+
+    conf = app_tests.TestConf(
+        program=path_to_genome,
+        args=['-l', '1000',
+              '-o', ph.outFile('genome.test1.fasta'),
+              ],
+        redir_stdout=ph.outFile('genome.test1.stdout'),
+        redir_stderr=ph.outFile('genome.test1.stderr'),
+        to_diff=[(ph.inFile('genome.test1.fasta'),
+                  ph.outFile('genome.test1.fasta')),
+                 (ph.inFile('genome.test1.stdout'),
+                  ph.outFile('genome.test1.stdout'),
+                  transforms),
+                 (ph.inFile('genome.test1.stderr'),
+                  ph.outFile('genome.test1.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+    conf = app_tests.TestConf(
+        program=path_to_genome,
+        args=['-s', '1',
+              '-l', '1000',
+              '-l', '100',
+              '-o', ph.outFile('genome.test2.fasta'),
+              ],
+        redir_stdout=ph.outFile('genome.test2.stdout'),
+        redir_stderr=ph.outFile('genome.test2.stderr'),
+        to_diff=[(ph.inFile('genome.test2.fasta'),
+                  ph.outFile('genome.test2.fasta')),
+                 (ph.inFile('genome.test2.stdout'),
+                  ph.outFile('genome.test2.stdout'),
+                  transforms),
+                 (ph.inFile('genome.test2.stderr'),
+                  ph.outFile('genome.test2.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
 
     # ============================================================
     # Test mason_variator
@@ -124,12 +169,108 @@ def main(source_base, binary_base):
                  ])
     conf_list.append(conf)
 
+    # ============================================================
+    # Test mason_simulator
+    # ============================================================
+
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '-o', ph.outFile('simulator.left1.fq'),
+              '-or', ph.outFile('simulator.right1.fq'),
+              '-oa', ph.outFile('simulator.out1.sam'),
+              ],
+        redir_stdout=ph.outFile('simulator.out1.stdout'),
+        redir_stderr=ph.outFile('simulator.out1.stderr'),
+        to_diff=[(ph.inFile('simulator.left1.fq'),
+                  ph.outFile('simulator.left1.fq')),
+                 (ph.inFile('simulator.right1.fq'),
+                  ph.outFile('simulator.right1.fq')),
+                 (ph.inFile('simulator.out1.sam'),
+                  ph.outFile('simulator.out1.sam')),
+                 (ph.inFile('simulator.out1.stdout'),
+                  ph.outFile('simulator.out1.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out1.stderr'),
+                  ph.outFile('simulator.out1.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '-iv', ph.inFile('random_var1.vcf'),
+              '-o', ph.outFile('simulator.left2.fq'),
+              '-or', ph.outFile('simulator.right2.fq'),
+              '-oa', ph.outFile('simulator.out2.sam'),
+              ],
+        redir_stdout=ph.outFile('simulator.out2.stdout'),
+        redir_stderr=ph.outFile('simulator.out2.stderr'),
+        to_diff=[(ph.inFile('simulator.left2.fq'),
+                  ph.outFile('simulator.left2.fq')),
+                 (ph.inFile('simulator.right2.fq'),
+                  ph.outFile('simulator.right2.fq')),
+                 (ph.inFile('simulator.out2.sam'),
+                  ph.outFile('simulator.out2.sam')),
+                 (ph.inFile('simulator.out2.stdout'),
+                  ph.outFile('simulator.out2.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out2.stderr'),
+                  ph.outFile('simulator.out2.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '-o', ph.outFile('simulator.left3.fa'),
+              '-or', ph.outFile('simulator.right3.fa'),
+              ],
+        redir_stdout=ph.outFile('simulator.out3.stdout'),
+        redir_stderr=ph.outFile('simulator.out3.stderr'),
+        to_diff=[(ph.inFile('simulator.left3.fa'),
+                  ph.outFile('simulator.left3.fa')),
+                 (ph.inFile('simulator.right3.fa'),
+                  ph.outFile('simulator.right3.fa')),
+                 (ph.inFile('simulator.out3.stdout'),
+                  ph.outFile('simulator.out3.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out3.stderr'),
+                  ph.outFile('simulator.out3.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '-o', ph.outFile('simulator.left4.fa'),
+              ],
+        redir_stdout=ph.outFile('simulator.out4.stdout'),
+        redir_stderr=ph.outFile('simulator.out4.stderr'),
+        to_diff=[(ph.inFile('simulator.left4.fa'),
+                  ph.outFile('simulator.left4.fa')),
+                 (ph.inFile('simulator.out4.stdout'),
+                  ph.outFile('simulator.out4.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out4.stderr'),
+                  ph.outFile('simulator.out4.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
     # Execute the tests.
     failures = 0
     for conf in conf_list:
         res = app_tests.runTest(conf)
         # Output to the user.
-        print ' '.join(['mason_variator/mason_materializer'] + conf.args),
+        print ' '.join([os.path.basename(conf.program)] + conf.args),
         if res:
              print 'OK'
         else:
