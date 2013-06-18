@@ -5,11 +5,11 @@ __OPTIONS_____________________________________________________________________
 
 FASTA IN             	random.fasta
 SV SIZE TSV IN       	
-VCF OUT              	random_var1.vcf
-FASTA OUT            	random_var1.fasta
-BREAKPOINT TSV OUT   	random_var1_bp.txt
-METHYLATION IN FILE  	
-METHYLATION OUT FILE 	random_var1_meth.fasta
+VCF OUT              	random_var2.vcf
+FASTA OUT            	random_var2.fasta
+BREAKPOINT TSV OUT   	random_var2_bp.txt
+METHYLATION IN FILE  	random_meth1.fasta
+METHYLATION OUT FILE 	random_var2_meth.fasta
 
 NUM HAPLOTYPES       	2
 HAPLOTYPE SEP        	"/"
@@ -49,13 +49,13 @@ __SIMULATION__________________________________________________________________
 
 Simulation...
   1
-  snps:                26
-  small indels:        5
+  snps:                18
+  small indels:        10
   structural variants: 36
   2
-  snps:                2
+  snps:                0
   small indels:        0
-  structural variants: 2
+  structural variants: 3
 OK.
 
 

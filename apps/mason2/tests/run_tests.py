@@ -37,6 +37,8 @@ def main(source_base, binary_base):
 
     path_to_genome = app_tests.autolocateBinary(
       binary_base, 'sandbox/mason2/apps/mason2', 'mason_genome')
+    path_to_methylation = app_tests.autolocateBinary(
+      binary_base, 'sandbox/mason2/apps/mason2', 'mason_methylation')
     path_to_variator = app_tests.autolocateBinary(
       binary_base, 'sandbox/mason2/apps/mason2', 'mason_variator')
     path_to_materializer = app_tests.autolocateBinary(
@@ -106,9 +108,32 @@ def main(source_base, binary_base):
     conf_list.append(conf)
 
     # ============================================================
+    # Test mason_methylation
+    # ============================================================
+
+    conf = app_tests.TestConf(
+        program=path_to_methylation,
+        args=['--seed', '33',
+              '-i', ph.inFile('random.fasta'),
+              '-o', ph.outFile('random_meth1.fasta'),
+              ],
+        redir_stdout=ph.outFile('methylation.test1.stdout'),
+        redir_stderr=ph.outFile('methylation.test1.stderr'),
+        to_diff=[(ph.inFile('methylation.test1.fasta'),
+                  ph.outFile('methylation.test1.fasta')),
+                 (ph.inFile('methylation.test1.stdout'),
+                  ph.outFile('methylation.test1.stdout'),
+                  transforms),
+                 (ph.inFile('methylation.test1.stderr'),
+                  ph.outFile('methylation.test1.stderr'),
+                  transforms),
+                 ])
+
+    # ============================================================
     # Test mason_variator
     # ============================================================
 
+    # Generation methylation in variator.
     conf = app_tests.TestConf(
         program=path_to_variator,
         args=['-ir', ph.inFile('random.fasta'),
@@ -142,6 +167,45 @@ def main(source_base, binary_base):
                   ph.outFile('random_var1.vcf.stderr'),
                   transforms),
                  (ph.inFile('random_var1.vcf.stdout'), ph.outFile('random_var1.vcf.stdout'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    # Generation methylation in variator.
+    conf = app_tests.TestConf(
+        program=path_to_variator,
+        args=['-ir', ph.inFile('random.fasta'),
+              '-n', '2',
+              '-ov', ph.outFile('random_var2.vcf'),
+              '-of', ph.outFile('random_var2.fasta'),
+              '--snp-rate', '0.001',
+              '--small-indel-rate', '0.001',
+              '--sv-indel-rate', '0.001',
+              '--sv-inversion-rate', '0.001',
+              '--sv-translocation-rate', '0.001',
+              '--sv-duplication-rate', '0.001',
+              '--min-sv-size', '50',
+              '--max-sv-size', '100',
+              '--methylation-levels',
+              '--meth-fasta-in', ph.inFile('random_meth1.fasta'),
+              '--meth-fasta-out', ph.outFile('random_var2_meth.fasta'),
+              '--out-breakpoints', ph.outFile('random_var2_bp.txt'),
+              ],
+        redir_stdout=ph.outFile('random_var2.vcf.stdout'),
+        redir_stderr=ph.outFile('random_var2.vcf.stderr'),
+        to_diff=[(ph.inFile('random_var2.vcf'),
+                  ph.outFile('random_var2.vcf'),
+                  transforms),
+                 (ph.inFile('random_var2.fasta'),
+                  ph.outFile('random_var2.fasta')),
+                 (ph.inFile('random_var2_bp.txt'),
+                  ph.outFile('random_var2_bp.txt')),
+                 (ph.inFile('random_var2_meth.fasta'),
+                  ph.outFile('random_var2_meth.fasta')),
+                 (ph.inFile('random_var2.vcf.stderr'),
+                  ph.outFile('random_var2.vcf.stderr'),
+                  transforms),
+                 (ph.inFile('random_var2.vcf.stdout'), ph.outFile('random_var2.vcf.stdout'),
                   transforms),
                  ])
     conf_list.append(conf)

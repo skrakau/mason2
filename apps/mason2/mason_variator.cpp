@@ -49,6 +49,7 @@
 #include <seqan/sequence_journaled.h>
 #include <seqan/index.h>  // for Shape<>
 
+#include "mason_types.h"
 #include "variation_size_tsv.h"
 #include "genomic_variants.h"
 
@@ -87,6 +88,8 @@ struct MasonVariatorOptions
     seqan::CharString vcfOutFile;
     // FASTA file to write out with variations.
     seqan::CharString fastaOutFile;
+    // FASTA file to load the methylation levels from.
+    seqan::CharString methFastaInFile;
     // FASTA file to write the methylation levels to.
     seqan::CharString methFastaOutFile;
 
@@ -153,6 +156,7 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "VCF OUT              \t" << options.vcfOutFile << "\n"
         << "FASTA OUT            \t" << options.fastaOutFile << "\n"
         << "BREAKPOINT TSV OUT   \t" << options.outputBreakpointFile << "\n"
+        << "METHYLATION IN FILE  \t" << options.methFastaInFile << "\n"
         << "METHYLATION OUT FILE \t" << options.methFastaOutFile << "\n"
         << "\n"
         << "NUM HAPLOTYPES       \t" << options.numHaplotypes << "\n"
@@ -607,6 +611,8 @@ public:
 
     // FAI Index for loading sequence contig-wise.
     seqan::FaiIndex const & faiIndex;
+    // FAI Index for loading methylation data.
+    seqan::FaiIndex methFaiIndex;
 
     // Variation size record.
     seqan::String<VariationSizeRecord> variationSizeRecords;
@@ -617,7 +623,26 @@ public:
     MasonVariatorApp(TRng & rng, seqan::FaiIndex const & faiIndex,
                      MasonVariatorOptions const & options) :
             rng(rng), options(options), faiIndex(faiIndex)
-    {}
+    {
+        _init();
+    }
+
+    void _init()
+    {
+        // Read/build methylation FASTA FAI file.
+        if (!empty(options.methFastaInFile))
+        {
+            if (read(methFaiIndex, toCString(options.methFastaInFile)) != 0)
+            {
+                if (build(methFaiIndex, toCString(options.methFastaInFile)) != 0)
+                    throw MasonIOException("Could not build FAI index for methylation FASTA.");
+                seqan::CharString faiPath = options.methFastaInFile;
+                append(faiPath, ".fai");
+                if (write(methFaiIndex, toCString(faiPath)) != 0)
+                    throw MasonIOException("Could not save methylation FASTA FAI.");
+            }
+        }
+    }
 
     int run()
     {
@@ -720,7 +745,43 @@ public:
             // interest.
             MethylationLevels methLevels;
             if (options.methSimOptions.simulateMethylationLevels)
-                _simulateMethLevels(methLevels, rId);
+            {
+                if (!empty(options.methFastaInFile))
+                {
+                    std::stringstream ssTop, ssBottom;
+                    ssTop << sequenceName(faiIndex, rId) << "/TOP";
+                    unsigned idx = 0;
+                    if (!getIdByName(methFaiIndex, ssTop.str().c_str(), idx))
+                    {
+                        std::cerr << "\nERROR: Could not find " << ssTop.str()
+                                  << " in methylation input file.\n";
+                        return 1;
+                    }
+                    if (readSequence(methLevels.forward, methFaiIndex, idx) != 0)
+                    {
+                        std::cerr << "\nERROR: Could not load " << ssTop.str()
+                                  << " from methylation FASTA.\n";
+                        return 1;
+                    }
+                    ssBottom << sequenceName(faiIndex, rId) << "/BOT";
+                    if (!getIdByName(methFaiIndex, ssBottom.str().c_str(), idx))
+                    {
+                        std::cerr << "\nERROR: Could not find " << ssBottom.str()
+                                  << " in methylation input file.\n";
+                        return 1;
+                    }
+                    if (readSequence(methLevels.reverse, methFaiIndex, idx) != 0)
+                    {
+                        std::cerr << "\nERROR: Could not load " << ssBottom.str()
+                                  << " from methylation FASTA.\n";
+                        return 1;
+                    }
+                }
+                else
+                {
+                    _simulateMethLevels(methLevels, rId);
+                }
+            }
             // Simulate contigs.
             _simulateContig(svSim, smallSim, methLevels, options, rId);
         }
@@ -1593,6 +1654,11 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     // Methylation Simulation Options
     // ----------------------------------------------------------------------
 
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-in", "Path to load original methylation levels from.  "
+                                            "Methylation levels are simulated if omitted.",
+                                            seqan::ArgParseOption::INPUTFILE, "FILE"));
+    setValidValues(parser, "meth-fasta-in", "fa fasta");
+
     addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "Path to write methylation levels to as FASTA.  "
                                             "Only written if \\fB-of\\fP/\\fB--out-fasta\\fP is given.",
                                             seqan::ArgParseOption::OUTPUTFILE, "FILE"));
@@ -1703,8 +1769,11 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.maxSVSize, parser, "max-sv-size");
 
     getOptionValue(options.methFastaOutFile, parser, "meth-fasta-out");
+    getOptionValue(options.methFastaInFile, parser, "meth-fasta-in");
 
     options.methSimOptions.getOptionValues(parser);
+
+    options.methSimOptions.simulateMethylationLevels = !empty(options.methFastaOutFile);
 
     return seqan::ArgumentParser::PARSE_OK;
 }
