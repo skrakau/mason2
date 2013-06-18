@@ -8,6 +8,7 @@ SV SIZE TSV IN
 VCF OUT              	random_var1.vcf
 FASTA OUT            	random_var1.fasta
 BREAKPOINT TSV OUT   	random_var1_bp.txt
+METHYLATION OUT FILE 	random_var1_meth.fasta
 
 NUM HAPLOTYPES       	2
 HAPLOTYPE SEP        	"/"
@@ -27,7 +28,6 @@ MIN SV SIZE          	50
 MAX SV SIZE          	100
 
 SIM. METHYL. LEVELS  	1
-METHYLATION OUT FILE 	random_var1_meth.fasta
 METHYLATION LEVELS
   C   MU             	0.0001
   C   SIGMA          	1e-05

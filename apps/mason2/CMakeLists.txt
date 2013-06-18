@@ -62,8 +62,11 @@ add_library (mason_sim
              )
 
 
-# Update the list of file names below if you add source files to your application.
+# Simulate random genomes.
 add_executable (mason_genome mason_genome.cpp)
+
+# Simulate methylation levels for gnome.
+add_executable (mason_methylation mason_methylation.cpp)
 
 # Simulate sequencing of fragments.
 add_executable (mason_frag_sequencing mason_frag_sequencing.cpp)
@@ -82,6 +85,7 @@ add_executable (mason_tests mason_tests.cpp)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (mason_genome ${SEQAN_LIBRARIES} mason_sim)
+target_link_libraries (mason_methylation ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_frag_sequencing ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_variator ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_materializer ${SEQAN_LIBRARIES} mason_sim)

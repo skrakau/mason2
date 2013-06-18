@@ -82,6 +82,47 @@ struct MasonSimulateGenomeOptions
 };
 
 // ----------------------------------------------------------------------------
+// Class MethylationLevelSimulatorOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for methylation level computation.
+
+struct MethylationLevelSimulatorOptions
+{
+    // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // Whether or not to simulate methylation levels.
+    bool simulateMethylationLevels;
+    // Median and standard deviation for picking methylation level for all Cs.
+    double methMuC, methSigmaC;
+    // Median and standard deviation for picking methylation level for CpGs.
+    double methMuCG, methSigmaCG;
+    // Median and standard deviation for picking methylation level for CHGs.
+    double methMuCHG, methSigmaCHG;
+    // Median and standard deviation for picking methylation level for CHHs.
+    double methMuCHH, methSigmaCHH;
+
+    MethylationLevelSimulatorOptions() :
+            simulateMethylationLevels(false), methMuC(0), methSigmaC(0), methMuCG(0), methSigmaCG(0),
+            methMuCHG(0), methSigmaCHG(0), methMuCHH(0), methSigmaCHH(0)
+    {}
+
+    // Add options to the argument parser.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+
+// ----------------------------------------------------------------------------
 // Class MaterializerOptions
 // ----------------------------------------------------------------------------
 
@@ -671,6 +712,46 @@ struct MasonFragmentSequencingOptions
     Roche454SequencingOptions rocheOptions;
 
     MasonFragmentSequencingOptions() : verbosity(0), seed(0)
+    {}
+
+    // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser, calls addTextSections() on *Options objects.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.  Calls getOptionValues() on the nested *Option objects.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+// --------------------------------------------------------------------------
+// Class MasonMethylationOptions
+// --------------------------------------------------------------------------
+
+// This struct stores the options from the command line.
+//
+// You might want to rename this to reflect the name of your app.
+
+struct MasonMethylationOptions
+{
+    // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // The seed to use for the RNG.
+    int seed;
+
+    // Methylation simulation options.
+    MethylationLevelSimulatorOptions methOptions;
+
+    // FASTA file to import.
+    seqan::CharString fastaInFile;
+    // FASTA file to write the methylation levels to.
+    seqan::CharString methFastaOutFile;
+
+    MasonMethylationOptions() : verbosity(1), seed(0)
     {}
 
     // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.

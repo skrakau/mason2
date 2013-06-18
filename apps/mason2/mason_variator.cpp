@@ -87,6 +87,8 @@ struct MasonVariatorOptions
     seqan::CharString vcfOutFile;
     // FASTA file to write out with variations.
     seqan::CharString fastaOutFile;
+    // FASTA file to write the methylation levels to.
+    seqan::CharString methFastaOutFile;
 
     // Path to a TSV file where the first two columns giving the type of the SV to simulate and the size of the SV.
     // This overrides the simulation of SV from the sv*Rate parameters.
@@ -151,6 +153,7 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "VCF OUT              \t" << options.vcfOutFile << "\n"
         << "FASTA OUT            \t" << options.fastaOutFile << "\n"
         << "BREAKPOINT TSV OUT   \t" << options.outputBreakpointFile << "\n"
+        << "METHYLATION OUT FILE \t" << options.methFastaOutFile << "\n"
         << "\n"
         << "NUM HAPLOTYPES       \t" << options.numHaplotypes << "\n"
         << "HAPLOTYPE SEP        \t\"" << options.haplotypeSep << "\"\n"
@@ -170,7 +173,6 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
         << "MAX SV SIZE          \t" << options.maxSVSize << "\n"
         << "\n"
         << "SIM. METHYL. LEVELS  \t" << options.methSimOptions.simulateMethylationLevels << "\n"
-        << "METHYLATION OUT FILE \t" << options.methSimOptions.methFastaOutFile << "\n"
         << "METHYLATION LEVELS\n"
         << "  C   MU             \t" << options.methSimOptions.methMuC << "\n"
         << "  C   SIGMA          \t" << options.methSimOptions.methSigmaC << "\n"
@@ -691,13 +693,13 @@ public:
         }
 
         // Open methylation level output file if necessary.
-        if (options.methSimOptions.simulateMethylationLevels && !empty(options.methSimOptions.methFastaOutFile))
+        if (options.methSimOptions.simulateMethylationLevels && !empty(options.methFastaOutFile))
         {
-            open(outMethLevelStream, toCString(options.methSimOptions.methFastaOutFile), seqan::SequenceStream::WRITE,
+            open(outMethLevelStream, toCString(options.methFastaOutFile), seqan::SequenceStream::WRITE,
                  seqan::SequenceStream::FASTA);
             if (!isGood(outMethLevelStream))
             {
-                std::cerr << "ERROR: Could not open " << options.methSimOptions.methFastaOutFile << " for writing!\n";
+                std::cerr << "ERROR: Could not open " << options.methFastaOutFile << " for writing!\n";
                 return 1;
             }
         }
@@ -753,7 +755,7 @@ public:
         idTop << options.haplotypeSep << "TOP";
         if (writeRecord(outMethLevelStream, idTop.str(), levels.forward) != 0)
         {
-            std::cerr << "ERROR: Problem writing to " << options.methSimOptions.methFastaOutFile << "\n";
+            std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
             return 1;
         }
 
@@ -764,7 +766,7 @@ public:
         idBottom << options.haplotypeSep << "BOT";
         if (writeRecord(outMethLevelStream, idBottom.str(), levels.reverse) != 0)
         {
-            std::cerr << "ERROR: Problem writing to " << options.methSimOptions.methFastaOutFile << "\n";
+            std::cerr << "ERROR: Problem writing to " << options.methFastaOutFile << "\n";
             return 1;
         }
 
@@ -857,7 +859,7 @@ public:
         if (!empty(options.fastaOutFile))
         {
             // Write out methylation levels for reference.
-            if (options.methSimOptions.simulateMethylationLevels && !empty(options.methSimOptions.methFastaOutFile))
+            if (options.methSimOptions.simulateMethylationLevels && !empty(options.methFastaOutFile))
                 if (_writeMethylationLevels(methLevels, -1, rId) != 0)
                     return 1;
             // Apply variations to contigs and write out.
@@ -882,7 +884,7 @@ public:
             MethylationLevels levelsVariants;
             varMat.run(seqVariants, levelsVariants, breakpoints, contig, levels, hId);
             // Write out methylation levels if necessary.
-            if (!empty(options.methSimOptions.methFastaOutFile))
+            if (!empty(options.methFastaOutFile))
                 if (_writeMethylationLevels(levelsVariants, hId, rId) != 0)
                     return 1;
         }
@@ -1585,69 +1587,17 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     setMinValue(parser, "max-sv-size", "0");
     setDefaultValue(parser, "max-sv-size", "1000");
 
+    options.methSimOptions.addOptions(parser);
+    
     // ----------------------------------------------------------------------
     // Methylation Simulation Options
     // ----------------------------------------------------------------------
-
-    addSection(parser, "Methylation Rates");
-
-    addOption(parser, seqan::ArgParseOption("", "methylation-levels", "Enable simulation of methylation levels."));
 
     addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "Path to write methylation levels to as FASTA.  "
                                             "Only written if \\fB-of\\fP/\\fB--out-fasta\\fP is given.",
                                             seqan::ArgParseOption::OUTPUTFILE, "FILE"));
     setValidValues(parser, "meth-fasta-out", "fa fasta");
 
-    addOption(parser, seqan::ArgParseOption("", "meth-c-mu", "Median of beta distribution for methylation "
-                                            "level of cytosine.", seqan::ArgParseOption::DOUBLE, "MU"));
-    setMinValue(parser, "meth-c-mu", "0");
-    setMaxValue(parser, "meth-c-mu", "1");
-    setDefaultValue(parser, "meth-c-mu", "0.0001");    
-
-    addOption(parser, seqan::ArgParseOption("", "meth-c-sigma", "Standard deviation of beta distribution for "
-                                            "methylation level of cytosine.", seqan::ArgParseOption::DOUBLE, "SIGMA"));
-    setMinValue(parser, "meth-c-sigma", "0");
-    setMaxValue(parser, "meth-c-sigma", "1");
-    setDefaultValue(parser, "meth-c-sigma", "0.00001");
-
-    addOption(parser, seqan::ArgParseOption("", "meth-cg-mu", "Median of beta distribution for methylation "
-                                            "level of CpG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
-    setMinValue(parser, "meth-cg-mu", "0");
-    setMaxValue(parser, "meth-cg-mu", "1");
-    setDefaultValue(parser, "meth-cg-mu", "0.6");    
-
-    addOption(parser, seqan::ArgParseOption("", "meth-cg-sigma", "Standard deviation of beta distribution for "
-                                            "methylation level of CpG loci.", seqan::ArgParseOption::DOUBLE,
-                                            "SIGMA"));
-    setMinValue(parser, "meth-cg-sigma", "0");
-    setMaxValue(parser, "meth-cg-sigma", "1");
-    setDefaultValue(parser, "meth-cg-sigma", "0.03");
-
-    addOption(parser, seqan::ArgParseOption("", "meth-chg-mu", "Median of beta distribution for methylation "
-                                            "level of CHG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
-    setMinValue(parser, "meth-chg-mu", "0");
-    setMaxValue(parser, "meth-chg-mu", "1");
-    setDefaultValue(parser, "meth-chg-mu", "0.08");    
-
-    addOption(parser, seqan::ArgParseOption("", "meth-chg-sigma", "Standard deviation of beta distribution for "
-                                            "methylation level of CHG loci.", seqan::ArgParseOption::DOUBLE,
-                                            "SIGMA"));
-    setMinValue(parser, "meth-chg-sigma", "0");
-    setMaxValue(parser, "meth-chg-sigma", "1");
-    setDefaultValue(parser, "meth-chg-sigma", "0.008");
-
-    addOption(parser, seqan::ArgParseOption("", "meth-chh-mu", "Median of beta distribution for methylation "
-                                            "level of CHH loci.", seqan::ArgParseOption::DOUBLE, "MU"));
-    setMinValue(parser, "meth-chh-mu", "0");
-    setMaxValue(parser, "meth-chh-mu", "1");
-    setDefaultValue(parser, "meth-chh-mu", "0.05");    
-
-    addOption(parser, seqan::ArgParseOption("", "meth-chh-sigma", "Standard deviation of beta distribution for "
-                                            "methylation level of CHH loci.", seqan::ArgParseOption::DOUBLE,
-                                            "SIGMA"));
-    setMinValue(parser, "meth-chh-sigma", "0");
-    setMaxValue(parser, "meth-chh-sigma", "1");
-    setDefaultValue(parser, "meth-chh-sigma", "0.005");
 
     // ----------------------------------------------------------------------
     // Simulation Details Section
@@ -1752,16 +1702,9 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     getOptionValue(options.minSVSize, parser, "min-sv-size");
     getOptionValue(options.maxSVSize, parser, "max-sv-size");
 
-    getOptionValue(options.methSimOptions.simulateMethylationLevels, parser, "methylation-levels");
-    getOptionValue(options.methSimOptions.methFastaOutFile, parser, "meth-fasta-out");
-    getOptionValue(options.methSimOptions.methMuC, parser, "meth-c-mu");
-    getOptionValue(options.methSimOptions.methSigmaC, parser, "meth-c-sigma");
-    getOptionValue(options.methSimOptions.methMuCG, parser, "meth-cg-mu");
-    getOptionValue(options.methSimOptions.methSigmaCG, parser, "meth-cg-sigma");
-    getOptionValue(options.methSimOptions.methMuCHG, parser, "meth-chg-mu");
-    getOptionValue(options.methSimOptions.methSigmaCHG, parser, "meth-chg-sigma");
-    getOptionValue(options.methSimOptions.methMuCHH, parser, "meth-chh-mu");
-    getOptionValue(options.methSimOptions.methSigmaCHH, parser, "meth-chh-sigma");
+    getOptionValue(options.methFastaOutFile, parser, "meth-fasta-out");
+
+    options.methSimOptions.getOptionValues(parser);
 
     return seqan::ArgumentParser::PARSE_OK;
 }

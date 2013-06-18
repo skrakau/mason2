@@ -124,6 +124,113 @@ char const * getFragmentSizeModelStr(Roche454SequencingOptions::ReadLengthModel 
 }
 
 // ----------------------------------------------------------------------------
+// Function MethylationLevelSimulatorOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void MethylationLevelSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    addSection(parser, "Methylation Level Simulation");
+
+    addOption(parser, seqan::ArgParseOption("", "methylation-levels", "Enable methylation level simulation."));
+
+    addOption(parser, seqan::ArgParseOption("", "meth-c-mu", "Median of beta distribution for methylation "
+                                            "level of cytosine.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-c-mu", "0");
+    setMaxValue(parser, "meth-c-mu", "1");
+    setDefaultValue(parser, "meth-c-mu", "0.0001");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-c-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of cytosine.", seqan::ArgParseOption::DOUBLE, "SIGMA"));
+    setMinValue(parser, "meth-c-sigma", "0");
+    setMaxValue(parser, "meth-c-sigma", "1");
+    setDefaultValue(parser, "meth-c-sigma", "0.00001");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-cg-mu", "Median of beta distribution for methylation "
+                                            "level of CpG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-cg-mu", "0");
+    setMaxValue(parser, "meth-cg-mu", "1");
+    setDefaultValue(parser, "meth-cg-mu", "0.6");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-cg-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CpG loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-cg-sigma", "0");
+    setMaxValue(parser, "meth-cg-sigma", "1");
+    setDefaultValue(parser, "meth-cg-sigma", "0.03");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chg-mu", "Median of beta distribution for methylation "
+                                            "level of CHG loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-chg-mu", "0");
+    setMaxValue(parser, "meth-chg-mu", "1");
+    setDefaultValue(parser, "meth-chg-mu", "0.08");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chg-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CHG loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-chg-sigma", "0");
+    setMaxValue(parser, "meth-chg-sigma", "1");
+    setDefaultValue(parser, "meth-chg-sigma", "0.008");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chh-mu", "Median of beta distribution for methylation "
+                                            "level of CHH loci.", seqan::ArgParseOption::DOUBLE, "MU"));
+    setMinValue(parser, "meth-chh-mu", "0");
+    setMaxValue(parser, "meth-chh-mu", "1");
+    setDefaultValue(parser, "meth-chh-mu", "0.05");    
+
+    addOption(parser, seqan::ArgParseOption("", "meth-chh-sigma", "Standard deviation of beta distribution for "
+                                            "methylation level of CHH loci.", seqan::ArgParseOption::DOUBLE,
+                                            "SIGMA"));
+    setMinValue(parser, "meth-chh-sigma", "0");
+    setMaxValue(parser, "meth-chh-sigma", "1");
+    setDefaultValue(parser, "meth-chh-sigma", "0.005");
+}
+
+// ----------------------------------------------------------------------------
+// Function MethylationLevelSimulatorOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void MethylationLevelSimulatorOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    (void)parser;
+}
+
+// ----------------------------------------------------------------------------
+// Function MethylationLevelSimulatorOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void MethylationLevelSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    getOptionValue(simulateMethylationLevels, parser, "methylation-levels");
+    getOptionValue(methMuC, parser, "meth-c-mu");
+    getOptionValue(methSigmaC, parser, "meth-c-sigma");
+    getOptionValue(methMuCG, parser, "meth-cg-mu");
+    getOptionValue(methSigmaCG, parser, "meth-cg-sigma");
+    getOptionValue(methMuCHG, parser, "meth-chg-mu");
+    getOptionValue(methSigmaCHG, parser, "meth-chg-sigma");
+    getOptionValue(methMuCHH, parser, "meth-chh-mu");
+    getOptionValue(methSigmaCHH, parser, "meth-chh-sigma");
+}
+
+// ----------------------------------------------------------------------------
+// Function MethylationLevelSimulatorOptions::print()
+// ----------------------------------------------------------------------------
+
+void MethylationLevelSimulatorOptions::print(std::ostream & out) const
+{
+    out << "METHYLATION LEVELS OPTIONS\n"
+        << "  VERBOSITY      \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "  MEDIAN C\t" << methMuC << "\n"
+        << "  STDDEV C\t" << methSigmaC << "\n"
+        << "  MEDIAN CG\t" << methMuCG << "\n"
+        << "  STDDEV CG\t" << methSigmaCG << "\n"
+        << "  MEDIAN CHG\t" << methMuCHG << "\n"
+        << "  STDDEV CHG\t" << methSigmaCHG << "\n"
+        << "  MEDIAN CHH\t" << methMuCHH << "\n"
+        << "  STDDEV CHH\t" << methSigmaCHH << "\n";
+}
+
+// ----------------------------------------------------------------------------
 // Function MaterializerOptions::addOptions()
 // ----------------------------------------------------------------------------
 
@@ -1210,4 +1317,89 @@ void MasonFragmentSequencingOptions::print(std::ostream & out) const
     sangerOptions.print(out);
     out << "\n";
     rocheOptions.print(out);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSimulatorOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void MasonMethylationOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    // Add top-level options.
+
+    addOption(parser, seqan::ArgParseOption("q", "quiet", "Low verbosity."));
+    addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
+    addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
+
+    addOption(parser, seqan::ArgParseOption("", "seed", "Seed for RNG.",
+                                            seqan::ArgParseOption::INTEGER, "INT"));
+    setDefaultValue(parser, "seed", "0");
+
+    addOption(parser, seqan::ArgParseOption("i", "in", "Input FASTA file with genome.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN.fa"));
+    setRequired(parser, "in");
+    setValidValues(parser, "in", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("o", "out", "Input FASTA file with genome.",
+                                            seqan::ArgParseOption::INPUTFILE, "OUT.fa"));
+    setRequired(parser, "out");
+    setValidValues(parser, "out", "fa fasta");
+
+    // Add options of the component options.
+    methOptions.addOptions(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMethylationOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void MasonMethylationOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    // Add text sections of the component options.
+    methOptions.addTextSections(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMethylationOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void MasonMethylationOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    // Get top-level options.
+    if (isSet(parser, "quiet"))
+        verbosity = 0;
+    if (isSet(parser, "verbose"))
+        verbosity = 2;
+    if (isSet(parser, "very-verbose"))
+        verbosity = 3;
+
+    getOptionValue(seed, parser, "seed");
+    getOptionValue(fastaInFile, parser, "in");
+    getOptionValue(methFastaOutFile, parser, "out");
+
+    // Get options for the other components that we use.
+    methOptions.getOptionValues(parser);
+
+    // Copy in the verbosity flag into the component options.
+    methOptions.verbosity = verbosity;
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonMethylationOptions::print()
+// ----------------------------------------------------------------------------
+
+void MasonMethylationOptions::print(std::ostream & out) const
+{
+    out << "MASON METHYLATION OPTIONS\n"
+        << "-------------------------\n"
+        << "\n"
+        << "VERBOSITY          \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "SEED               \t" << seed << "\n"
+        << "\n"
+        << "FASTA IN FILE      \t" << fastaInFile << "\n"
+        << "METH FASTA OUT FILE\t" << methFastaOutFile << "\n"
+        << "\n";
+    methOptions.print(out);
+    out << "\n";
 }

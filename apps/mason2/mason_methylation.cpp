@@ -31,96 +31,20 @@
 // ==========================================================================
 // Author: Manuel Holtgrewe <manuel.holtgrewe@fu-berlin.de>
 // ==========================================================================
-// Apply variants from a VCF file to a genomic sequence.
-//
-// The variants must be equivalent to the variants written by mason_variator.
-// See the documentation of mason_materializer and mason_variator for details
-// on this.
+// Simulate a random genome.
 // ==========================================================================
 
-// Note: We treat all given variants as phased.
-
-#include <seqan/arg_parse.h>
 #include <seqan/basic.h>
-#include <seqan/seq_io.h>
 #include <seqan/sequence.h>
-#include <seqan/vcf_io.h>
+#include <seqan/seq_io.h>
+#include <seqan/arg_parse.h>
 
-#include "vcf_materialization.h"
 #include "mason_options.h"
-#include "mason_types.h"
+#include "methylation_levels.h"
 
 // ==========================================================================
 // Classes
 // ==========================================================================
-
-// --------------------------------------------------------------------------
-// Class MasonMaterializerApp
-// --------------------------------------------------------------------------
-
-class MasonMaterializerApp
-{
-public:
-    // The configuration to use.
-    MasonMaterializerOptions const & options;
-
-    // Materialization of VCF.
-    VcfMaterializer vcfMat;
-    
-    // Output sequence stream.
-    seqan::SequenceStream outStream;
-
-    MasonMaterializerApp(MasonMaterializerOptions const & options) :
-            options(options), vcfMat(toCString(options.matOptions.fastaFileName),
-                                     toCString(options.matOptions.vcfFileName))
-    {}
-
-    int run()
-    {
-        // Intialization
-        std::cerr << "__INITIALIZATION_____________________________________________________________\n"
-                  << "\n";
-
-        std::cerr << "Opening files...";
-        try
-        {
-            vcfMat.init();
-            open(outStream, toCString(options.outputFileName), seqan::SequenceStream::WRITE);
-            if (!isGood(outStream))
-                throw MasonIOException("Could not open output file.");
-        }
-        catch (MasonIOException e)
-        {
-            std::cerr << "\nERROR: " << e.what() << "\n";
-            return 1;
-        }
-        std::cerr << " OK\n";
-
-        // Perform genome simulation.
-        std::cerr << "\n__MATERIALIZING______________________________________________________________\n"
-                  << "\n";
-
-        // The identifiers of the just materialized data.
-        int rID = 0, hID = 0;
-        seqan::Dna5String seq;
-        std::cerr << "Materializing...";
-        while (vcfMat.materializeNext(seq, rID, hID))
-        {
-            std::stringstream ssName;
-            ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << (hID + 1);
-            std::cerr << " " << ssName.str();
-            
-            if (writeRecord(outStream, ssName.str(), seq) != 0)
-            {
-                std::cerr << "ERROR: Could not write materialized sequence to output.\n";
-                return 1;
-            }
-        }
-        std::cerr << " DONE\n";
-
-        return 0;
-    }
-};
 
 // ==========================================================================
 // Functions
@@ -131,26 +55,22 @@ public:
 // --------------------------------------------------------------------------
 
 seqan::ArgumentParser::ParseResult
-parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** argv)
+parseCommandLine(MasonMethylationOptions & options, int argc, char const ** argv)
 {
     // Setup ArgumentParser.
-    seqan::ArgumentParser parser("mason_materializer");
+    seqan::ArgumentParser parser("mason_methylation");
     // Set short description, version, and date.
-    setShortDescription(parser, "VCF Materialization");
-    setVersion(parser, "2.0");
-    setDate(parser, "July 2012");
+    setShortDescription(parser, "Methylation Level Simulation");
+    setVersion(parser, "2.1");
+    setDate(parser, "March 2013");
     setCategory(parser, "Simulators");
 
     // Define usage line and long description.
-    addUsageLine(parser,
-                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-o\\fP \\IOUT.fa\\fP ");
-    addDescription(parser,
-                   "Apply variants from \\fIIN.vcf\\fP to \\fIIN.fa\\P and write the results to \\fIout.fa\\fP.");
+    addUsageLine(parser, "[OPTIONS] \\fB-i\\fP \\fIIN.fa\\fP \\fB-o\\fP \\fIOUT.fa\\fP");
+    addDescription(parser, "Simulate methylation levels for \\fIIN.fa\\fP and write them to \\fIOUT.fa\\fP.");
 
-    // Add option and text sections.
     options.addOptions(parser);
-    options.addTextSections(parser);
-    
+
     // Parse command line.
     seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
 
@@ -159,6 +79,7 @@ parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** arg
         return res;
 
     options.getOptionValues(parser);
+    options.methOptions.simulateMethylationLevels = true;
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -172,7 +93,7 @@ parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** arg
 int main(int argc, char const ** argv)
 {
     // Parse the command line.
-    MasonMaterializerOptions options;
+    MasonMethylationOptions options;
     seqan::ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
 
     // If there was an error parsing or built-in argument parser functionality
@@ -181,13 +102,94 @@ int main(int argc, char const ** argv)
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res == seqan::ArgumentParser::PARSE_ERROR;
 
-    std::cerr << "MASON VARIANT MATERIALIZER\n"
-              << "==========================\n\n";
+    std::cerr << "MASON METHYLATION SIMULATION\n"
+              << "============================\n\n";
     
     // Print the command line arguments back to the user.
     if (options.verbosity > 0)
         options.print(std::cerr);
 
-    MasonMaterializerApp app(options);
-    return app.run();
+    std::cerr << "\n__PREPARATION_________________________________________________________________\n"
+              << "\n";
+
+    std::cerr << "Loading Reference Index " << options.fastaInFile << " ...";
+    seqan::FaiIndex faiIndex;
+    if (read(faiIndex, toCString(options.fastaInFile)) != 0)
+    {
+        std::cerr << " FAILED (not fatal, we can just build it)\n";
+        std::cerr << "Building Index        " << options.fastaInFile << ".fai ...";
+        if (build(faiIndex, toCString(options.fastaInFile)) != 0)
+        {
+            std::cerr << "Could not build FAI index.\n";
+            return 1;
+        }
+        std::cerr << " OK\n";
+        seqan::CharString faiPath = options.fastaInFile;
+        append(faiPath, ".fai");
+        std::cerr << "Reference Index       " << faiPath << " ...";
+        if (write(faiIndex, toCString(faiPath)) != 0)
+        {
+            std::cerr << "Could not write FAI index we just built.\n";
+            return 1;
+        }
+        std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
+    }
+    else
+    {
+        std::cerr << " OK (" << length(faiIndex.indexEntryStore) << " seqs)\n";
+    }
+
+    std::cerr << "Opening output File " << options.methFastaOutFile << " ...";
+    seqan::SequenceStream outStream;
+    open(outStream, toCString(options.methFastaOutFile), seqan::SequenceStream::WRITE);
+    if (!isGood(outStream))
+    {
+        std::cerr << "\nERROR: Could not open output file.\n";
+        return 1;
+    }
+    std::cerr << " OK\n";
+
+    std::cerr << "\n__SIMULATION__________________________________________________________________\n"
+              << "\n";
+    
+    TRng rng(options.seed);
+    MethylationLevelSimulator methSim(rng, options.methOptions);
+
+    MethylationLevels levels;
+
+    seqan::Dna5String contig;
+    for (unsigned i = 0; i < numSeqs(faiIndex); ++i)
+    {
+        levels.clear();
+
+        std::cerr << "Simulating for " << sequenceName(faiIndex, i) << " ...";
+        if (readSequence(contig, faiIndex, i) != 0)
+        {
+            std::cerr << "\nERROR: Could not load sequence !\n";
+            return 1;
+        }
+
+        methSim.run(levels, contig);
+
+        std::stringstream ssTop;
+        ssTop << sequenceName(faiIndex, i) << "/TOP";
+        if (writeRecord(outStream, ssTop.str().c_str(), levels.forward) != 0)
+        {
+            std::cerr << "\nERROR: Problem writing to output file.\n";
+            return 1;
+        }
+        
+        std::stringstream ssBottom;
+        ssBottom << sequenceName(faiIndex, i) << "/BOT";
+        if (writeRecord(outStream, ssBottom.str().c_str(), levels.reverse) != 0)
+        {
+            std::cerr << "\nERROR: Problem writing to output file.\n";
+            return 1;
+        }
+        
+        std::cerr << " OK\n";
+    }
+    std::cerr << "\nDone with methylation simulation.\n";
+    
+    return 0;
 }

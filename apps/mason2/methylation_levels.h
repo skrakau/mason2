@@ -39,6 +39,9 @@
 #include <seqan/sequence.h>
 #include <seqan/sequence_journaled.h>  // for the journal
 
+#include "mason_types.h"
+#include "mason_options.h"
+
 // ============================================================================
 // Forwards
 // ============================================================================
@@ -123,32 +126,6 @@ struct MethylationLevels
         SEQAN_ASSERT_NEQ((int)c, (int)'>');
         reverse[i] = std::max(reverse[i], c);
     }
-};
-
-// --------------------------------------------------------------------------
-// Class MethylationLevelSimulatorOptions
-// --------------------------------------------------------------------------
-
-struct MethylationLevelSimulatorOptions
-{
-    // Enable simulation of methylation levels.
-    bool simulateMethylationLevels;
-    // Path to write methylation rates to.  There will be one sequence entry for the reference and one entry for each
-    // haplotype.  The probability will be encoded in ASCII characters 33-114, at a resolution of 1.25%, ">" is ignored.
-    seqan::CharString methFastaOutFile;
-    // Median and standard deviation for picking methylation level for all Cs.
-    double methMuC, methSigmaC;
-    // Median and standard deviation for picking methylation level for CpGs.
-    double methMuCG, methSigmaCG;
-    // Median and standard deviation for picking methylation level for CHGs.
-    double methMuCHG, methSigmaCHG;
-    // Median and standard deviation for picking methylation level for CHHs.
-    double methMuCHH, methSigmaCHH;
-
-    MethylationLevelSimulatorOptions() :
-            simulateMethylationLevels(false), methMuC(0), methSigmaC(0), methMuCG(0), methSigmaCG(0),
-            methMuCHG(0), methSigmaCHG(0), methMuCHH(0), methSigmaCHH(0)
-    {}
 };
 
 // --------------------------------------------------------------------------
