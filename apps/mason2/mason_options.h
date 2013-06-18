@@ -302,6 +302,10 @@ struct IlluminaSequencingOptions
     // // If set then no Ns will be introduced into the read.
     // bool illuminaNoN;
 
+    // Paths to left/right template FASTQ files.  The qualities will be used to compute positional qualities, patterns
+    // of Ns will be applied to the simulated reads.  If set, this will be used instead of the built-in model.
+    seqan::CharString leftTemplateFastq, rightTemplateFastq;
+
     // -----------------------------------------------------------------------
     // Base Calling Quality Model Parameters.
     // -----------------------------------------------------------------------

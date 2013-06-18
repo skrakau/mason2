@@ -481,6 +481,16 @@ void IlluminaSequencingOptions::addOptions(seqan::ArgumentParser & parser) const
                                             "Standard deviation of PHRED quality for mismatch bases of last base "
                                             "in Illumina sequencing.", seqan::ArgParseOption::DOUBLE, "QUAL"));
     setDefaultValue(parser, "illumina-mismatch-quality-stddev-end", "10.0");
+
+    addOption(parser, seqan::ArgParseOption("", "illumina-left-template-fastq",
+                                            "FASTQ file to use for a template for left-end reads.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN.fq"));
+    setValidValues(parser, "illumina-left-template-fastq", "fq fastq");
+
+    addOption(parser, seqan::ArgParseOption("", "illumina-right-template-fastq",
+                                            "FASTQ file to use for a template for right-end reads.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN.fq"));
+    setValidValues(parser, "illumina-right-template-fastq", "fq fastq");
 }
 
 // ----------------------------------------------------------------------------
@@ -519,6 +529,9 @@ void IlluminaSequencingOptions::getOptionValues(seqan::ArgumentParser const & pa
     getOptionValue(meanMismatchQualityEnd, parser, "illumina-mismatch-quality-mean-end");
     getOptionValue(stdDevMismatchQualityBegin, parser, "illumina-mismatch-quality-stddev-begin");
     getOptionValue(stdDevMismatchQualityEnd, parser, "illumina-mismatch-quality-stddev-end");
+
+    getOptionValue(leftTemplateFastq, parser, "illumina-left-template-fastq");
+    getOptionValue(rightTemplateFastq, parser, "illumina-right-template-fastq");
 }
 // ----------------------------------------------------------------------------
 // Function IlluminaSequencingOptions::print()
@@ -547,7 +560,10 @@ void IlluminaSequencingOptions::print(std::ostream & out) const
         << "  MEAN MISMATCH QUALITY BEGIN  \t" << meanMismatchQualityBegin << "\n"
         << "  MEAN MISMATCH QUALITY END    \t" << meanMismatchQualityEnd << "\n"
         << "  STDDEV MISMATCH QUALITY BEGIN\t" << stdDevMismatchQualityBegin << "\n"
-        << "  STDDEV MISMATCH QUALITY END  \t" << stdDevMismatchQualityEnd << "\n";
+        << "  STDDEV MISMATCH QUALITY END  \t" << stdDevMismatchQualityEnd << "\n"
+        << "\n"
+        << "  LEFT TEMPLATE FASTQ          \t" << leftTemplateFastq << "\n"
+        << "  RIGHT TEMPLATE FASTQ         \t" << rightTemplateFastq << "\n";
 }
 
 // ----------------------------------------------------------------------------

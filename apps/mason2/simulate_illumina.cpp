@@ -10,18 +10,14 @@ public:
     // Probabilities for a mismatch at a given position.
     seqan::String<double> mismatchProbabilities;
 
-    // Standard deviations for the normal distributions of base
-    // qualities for the mismatch case.
+    // Standard deviations for the normal distributions of base qualities for the mismatch case.
     seqan::String<double> mismatchQualityMeans;
-    // Standard deviations for the normal distributions of base
-    // qualities for the mismatch case.
+    // Standard deviations for the normal distributions of base qualities for the mismatch case.
     seqan::String<double> mismatchQualityStdDevs;
 
-    // Standard deviations for the normal distributions of base
-    // qualities for the non-mismatch case.
+    // Standard deviations for the normal distributions of base qualities for the non-mismatch case.
     seqan::String<double> qualityMeans;
-    // Standard deviations for the normal distributions of base
-    // qualities for the non-mismatch case.
+    // Standard deviations for the normal distributions of base qualities for the non-mismatch case.
     seqan::String<double> qualityStdDevs;
 
     IlluminaModel()
