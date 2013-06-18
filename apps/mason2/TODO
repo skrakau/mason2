@@ -11,6 +11,7 @@ mason_simulator
  * SAM from original with indel SVs
  * SAM from original with other SVs, clip after left part
  * FASTQ input from a typical run for quality and N-patterns, cycle through data
+   - This requires bulk-simulation of reads to circumvent possible problems.
 
 IMPORTANT
 ---------

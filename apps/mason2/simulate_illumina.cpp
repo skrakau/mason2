@@ -188,6 +188,9 @@ void _simulateSequence(TRead & read, TRng & rng, TFrag const & frag,
             else
                 appendValue(read, seqan::Dna5(num + (num == ordValue(*it))));
         }
+
+        if (cigar[i].operation == 'X')
+            it += cigar[i].count;
     }
 }
 

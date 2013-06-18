@@ -34,9 +34,6 @@
 // Simulate sequencing process from a genome.
 // ==========================================================================
 
-// TODO(holtgrew): Support using existing FASTQ files for error profiles/N patterns.
-// TODO(holtgrew): Translation from haplotype to reference contig.
-
 #include <vector>
 #include <utility>
 
@@ -146,18 +143,78 @@ public:
             _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
             if (buildAlignments)
             {
+                alignmentRecords[i].flag = 0;
+                alignmentRecords[i + 1].flag = 0;
+
+                if (!infos[i].isForward)
+                {
+                    alignmentRecords[i].flag |= seqan::BAM_FLAG_RC;
+                    alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_NEXT_RC;
+                }
+                if (!infos[i + 1].isForward)
+                {
+                    alignmentRecords[i].flag |= seqan::BAM_FLAG_NEXT_RC;
+                    alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_RC;
+                }
+
                 // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
                 // compute the whole record and reference coordinates when writing out.
                 _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                alignmentRecords[i].flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
                         seqan::BAM_FLAG_FIRST;
                 alignmentRecords[i].rID = rID;
                 alignmentRecords[i].beginPos = infos[i].beginPos;
+                if (!infos[i].isForward)
+                {
+                    reverseComplement(seqs[i]);
+                    reverse(quals[i]);
+                    reverse(infos[i].cigar);
+                }
+                alignmentRecords[i].cigar = infos[i].cigar;
+                alignmentRecords[i].seq = seqs[i];
+                alignmentRecords[i].qual = quals[i];
+                if (!infos[i].isForward)
+                {
+                    reverseComplement(seqs[i]);
+                    reverse(quals[i]);
+                    reverse(infos[i].cigar);
+                }
+
                 _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
-                alignmentRecords[i + 1].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
                         seqan::BAM_FLAG_LAST;
                 alignmentRecords[i + 1].rID = rID;
                 alignmentRecords[i + 1].beginPos = infos[i + 1].beginPos;
+                if (!infos[i + 1].isForward)
+                {
+                    reverseComplement(seqs[i + 1]);
+                    reverse(quals[i + 1]);
+                    reverse(infos[i + 1].cigar);
+                }
+                alignmentRecords[i + 1].cigar = infos[i + 1].cigar;
+                alignmentRecords[i + 1].seq = seqs[i + 1];
+                alignmentRecords[i + 1].qual = quals[i + 1];
+                if (!infos[i + 1].isForward)
+                {
+                    reverseComplement(seqs[i + 1]);
+                    reverse(quals[i + 1]);
+                    reverse(infos[i + 1].cigar);
+                }
+
+                alignmentRecords[i].rNextId = alignmentRecords[i + 1].rID;
+                alignmentRecords[i + 1].rNextId = alignmentRecords[i].rID;
+                alignmentRecords[i].pNext = alignmentRecords[i + 1].beginPos;
+                alignmentRecords[i + 1].pNext = alignmentRecords[i].beginPos;
+                if (alignmentRecords[i].beginPos < alignmentRecords[i + 1].beginPos)
+                {
+                    alignmentRecords[i].tLen = alignmentRecords[i + 1].beginPos + (int)length(seqs[i]) - alignmentRecords[i].beginPos;
+                    alignmentRecords[i + 1].tLen = -alignmentRecords[i].tLen;
+                }
+                else
+                {
+                    alignmentRecords[i + 1].tLen = alignmentRecords[i].beginPos + (int)length(seqs[i + 1]) - alignmentRecords[i + 1].beginPos;
+                    alignmentRecords[i].tLen = -alignmentRecords[i + 1].tLen;
+                }
             }
         }
     }
@@ -177,11 +234,26 @@ public:
                 // compute the whole record and reference coordinates when writing out.
                 infos[i].rID = rID;
                 infos[i].hID = hID;
-                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                alignmentRecords[i].flag = seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_FIRST;
+                _setId(alignmentRecords[i].qName, ss, fragmentIds[i], 1, infos[i], true);
+                alignmentRecords[i].flag = 0;
                 alignmentRecords[i].rID = rID;
                 alignmentRecords[i].beginPos = infos[i].beginPos;
+                if (!infos[i].isForward)
+                {
+                    alignmentRecords[i].flag = seqan::BAM_FLAG_RC;
+                    reverseComplement(seqs[i]);
+                    reverse(quals[i]);
+                    reverse(infos[i].cigar);
+                }
+                alignmentRecords[i].cigar = infos[i].cigar;
+                alignmentRecords[i].seq = seqs[i];
+                alignmentRecords[i].qual = quals[i];
+                if (!infos[i].isForward)
+                {
+                    reverseComplement(seqs[i]);
+                    reverse(quals[i]);
+                    reverse(infos[i].cigar);
+                }
             }
         }
     }
