@@ -232,9 +232,9 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
     _simulateQualities(quals, cigar);
     SEQAN_ASSERT_EQ(length(seq), length(quals));
 
-    // Reverse qualities if necessary.
-    if (strand == REVERSE)
-        reverse(quals);
+    // // Reverse qualities if necessary.
+    // if (strand == REVERSE)
+    //     reverse(quals);
 
     // Write out extended sequencing information info if configured to do so.  We always write out the sample position
     // and alignment information.
@@ -243,6 +243,7 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
     _getLengthInRef(cigar, len);
     info.beginPos = (dir == LEFT) ? beginPosition(frag) : (beginPosition(frag) + length(frag) - len);
     info.isForward = (strand == FORWARD);
+    // std::cerr << "  beginPos=" << info.beginPos - beginPosition(frag) << "\n";
 
     if (seqOptions->embedReadInfo)
     {
@@ -253,8 +254,9 @@ void IlluminaSequencingSimulator::simulateRead(TRead & seq, TQualities & quals, 
         if (strand == REVERSE)
             reverseComplement(info.sampleSequence);
     }
-    // std::cerr << "  frag=" << frag << "\n";
-    // std::cerr << "  " << seq << "\t" << quals << "\n";
+    // std::cerr << "  frag  =" << frag << "\n";
+    // std::cerr << "  fragRC=" << TRevCompFrag(frag) << "\n";
+    // std::cerr << "  seq=" << seq << "\tquals=" << quals << "\n";
 }
 
 // ---------------------------------------------------------------------------
