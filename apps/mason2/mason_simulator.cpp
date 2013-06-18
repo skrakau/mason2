@@ -376,51 +376,47 @@ public:
             std::cerr << "  " << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
             contigFragmentCount = 0;
 
-            SEQAN_OMP_PRAGMA(parallel num_threads(options.numThreads))
+            while (true)  // Execute as long as there are fragments left.
             {
-                int tID = omp_get_thread_num();
-
-                while (true)  // Execute as long as there are fragments left.
+                bool doBreak = false;
+                for (int tID = 0; tID < options.numThreads; ++tID)
                 {
                     // Read in the ids of the fragments to simulate.
                     threads[tID].fragmentIds.resize(options.chunkSize);  // make space
-                    bool doBreak = false;
-                    SEQAN_OMP_PRAGMA(critical(fragment_ids))
-                    {
-                        // Load the fragment ids to simulate for.
-                        int numRead = fread(&threads[tID].fragmentIds[0], sizeof(int), options.chunkSize,
-                                            fragmentIdSplitter.files[rID * haplotypeCount + hID]);
-                        contigFragmentCount += numRead;
-                        if (numRead == 0)
-                            doBreak = true;
-                        threads[tID].fragmentIds.resize(numRead);
-                    }
-                    if (doBreak)
-                        break;  // No more work left.
-                    
-                    // Perform the simulation.
-                    threads[tID].run(contigSeq, rID, hID);
-                    
-                    // Write out the temporary sequence.
-                    SEQAN_OMP_PRAGMA(critical(seq_io))
-                    {
-                        if (write2(fragmentSplitter.files[rID * haplotypeCount + hID],
-                                   threads[tID].ids, threads[tID].seqs, threads[tID].quals, seqan::Fastq()))
-                            throw MasonIOException("Could not write out temporary sequence.");
-                        if (!empty(options.outFileNameSam))
-                            for (unsigned i = 0; i < length(threads[tID].alignmentRecords); ++i)
-                            {
-                                if (write2(alignmentSplitter.files[rID * haplotypeCount + hID],
-                                           threads[tID].alignmentRecords[i], bamIOContext, seqan::Sam()) != 0)
-                                    throw MasonIOException("Could not write out temporary alignment record.");
-                            }
-                    }
-                    
-                    SEQAN_OMP_PRAGMA(critical(io_log))
-                    {
-                        std::cerr << '.' << std::flush;
-                    }
+
+                    // Load the fragment ids to simulate for.
+                    int numRead = fread(&threads[tID].fragmentIds[0], sizeof(int), options.chunkSize,
+                                        fragmentIdSplitter.files[rID * haplotypeCount + hID]);
+                    contigFragmentCount += numRead;
+                    if (numRead == 0)
+                        doBreak = true;
+                    threads[tID].fragmentIds.resize(numRead);
                 }
+                    
+                // Perform the simulation.
+                SEQAN_OMP_PRAGMA(parallel num_threads(options.numThreads))
+                {
+                    threads[omp_get_thread_num()].run(contigSeq, rID, hID);
+                }
+                    
+                // Write out the temporary sequence.
+                for (int tID = 0; tID < options.numThreads; ++tID)
+                {
+                    if (write2(fragmentSplitter.files[rID * haplotypeCount + hID],
+                               threads[tID].ids, threads[tID].seqs, threads[tID].quals, seqan::Fastq()))
+                        throw MasonIOException("Could not write out temporary sequence.");
+                    if (!empty(options.outFileNameSam))
+                        for (unsigned i = 0; i < length(threads[tID].alignmentRecords); ++i)
+                        {
+                            if (write2(alignmentSplitter.files[rID * haplotypeCount + hID],
+                                       threads[tID].alignmentRecords[i], bamIOContext, seqan::Sam()) != 0)
+                                throw MasonIOException("Could not write out temporary alignment record.");
+                        }
+                    std::cerr << '.' << std::flush;
+                }
+                    
+                if (doBreak)
+                    break;  // No more work left.
             }
             
             std::cerr << " (" << contigFragmentCount << " fragments) OK\n";

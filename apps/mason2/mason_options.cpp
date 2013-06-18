@@ -315,19 +315,19 @@ void FragmentSamplerOptions::addOptions(seqan::ArgumentParser & parser) const
                                             "uniform fragment size simulation.",
                                             seqan::ArgParseOption::INTEGER, "SIZE"));
     setDefaultValue(parser, "fragment-max-size", "400");
-    setMaxValue(parser, "fragment-max-size", "1");
+    setMinValue(parser, "fragment-max-size", "1");
 
     addOption(parser, seqan::ArgParseOption("", "fragment-mean-size", "Mean fragment size for normally distributed "
                                             "fragment size simulation.",
                                             seqan::ArgParseOption::INTEGER, "SIZE"));
     setDefaultValue(parser, "fragment-mean-size", "300");
-    setMaxValue(parser, "fragment-mean-size", "1");
+    setMinValue(parser, "fragment-mean-size", "1");
 
     addOption(parser, seqan::ArgParseOption("", "fragment-size-std-dev", "Fragment size standard deviation when using "
                                             "normally distributed fragment size simulation.",
                                             seqan::ArgParseOption::INTEGER, "SIZE"));
     setDefaultValue(parser, "fragment-size-std-dev", "30");
-    setMaxValue(parser, "fragment-size-std-dev", "1");
+    setMinValue(parser, "fragment-size-std-dev", "1");
 }
 
 // ----------------------------------------------------------------------------
