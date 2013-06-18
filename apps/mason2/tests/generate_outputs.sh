@@ -40,13 +40,24 @@ echo "${VARIATOR} -n 2 -ir random.fasta -ov random_var2.vcf -of random_var2.fast
 ${VARIATOR} -n 2 -ir random.fasta -ov random_var2.vcf -of random_var2.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --methylation-levels --meth-fasta-in random_meth1.fasta --meth-fasta-out random_var2_meth.fasta --out-breakpoints random_var2_bp.txt >random_var2.vcf.stdout 2>random_var2.vcf.stderr
 echo $?
 
+# Variation without methylation.
+echo "${VARIATOR} -n 2 -ir random.fasta -ov random_var3.vcf -of random_var3.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --out-breakpoints random_var3_bp.txt >random_var3.vcf.stdout 2>random_var3.vcf.stderr"
+${VARIATOR} -n 2 -ir random.fasta -ov random_var3.vcf -of random_var3.fasta --snp-rate 0.001 --small-indel-rate 0.001 --sv-indel-rate 0.001 --sv-inversion-rate 0.001 --sv-translocation-rate 0.001 --sv-duplication-rate 0.001 --min-sv-size 50 --max-sv-size 100 --out-breakpoints random_var3_bp.txt >random_var3.vcf.stdout 2>random_var3.vcf.stderr
+echo $?
+
 # ============================================================
 # mason_materializer
 # ============================================================
 
+# Without methylation levels.
 echo "${MATERIALIZER} -ir random.fasta -iv random_var1.vcf -o materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr"
 ${MATERIALIZER} -ir random.fasta -iv random_var1.vcf -o materializer.random_var1.fasta >materializer.random_var1.stdout 2>materializer.random_var1.stderr
 rm -f materializer.random_var1.fasta  # we'll compare against variator output
+echo $?
+# With methylation levels.
+echo "${MATERIALIZER} -ir random.fasta -iv random_var2.vcf -o materializer.random_var2.fasta --meth-fasta-in random_meth1.fasta --meth-fasta-out materializer.random_meth2.fasta >materializer.random_var2.stdout 2>materializer.random_var2.stderr"
+${MATERIALIZER} -ir random.fasta -iv random_var2.vcf -o materializer.random_var2.fasta --meth-fasta-in random_meth1.fasta --meth-fasta-out materializer.random_meth2.fasta >materializer.random_var2.stdout 2>materializer.random_var2.stderr
+rm -f materializer.random_var2.fasta materializer.random_meth2.fasta  # we'll compare against variator output
 echo $?
 
 # ============================================================

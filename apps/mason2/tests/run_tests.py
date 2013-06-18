@@ -166,7 +166,8 @@ def main(source_base, binary_base):
                  (ph.inFile('random_var1.vcf.stderr'),
                   ph.outFile('random_var1.vcf.stderr'),
                   transforms),
-                 (ph.inFile('random_var1.vcf.stdout'), ph.outFile('random_var1.vcf.stdout'),
+                 (ph.inFile('random_var1.vcf.stdout'),
+                  ph.outFile('random_var1.vcf.stdout'),
                   transforms),
                  ])
     conf_list.append(conf)
@@ -205,7 +206,43 @@ def main(source_base, binary_base):
                  (ph.inFile('random_var2.vcf.stderr'),
                   ph.outFile('random_var2.vcf.stderr'),
                   transforms),
-                 (ph.inFile('random_var2.vcf.stdout'), ph.outFile('random_var2.vcf.stdout'),
+                 (ph.inFile('random_var2.vcf.stdout'),
+                  ph.outFile('random_var2.vcf.stdout'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    # Variation without methylation levels.
+    conf = app_tests.TestConf(
+        program=path_to_variator,
+        args=['-ir', ph.inFile('random.fasta'),
+              '-n', '2',
+              '-ov', ph.outFile('random_var3.vcf'),
+              '-of', ph.outFile('random_var3.fasta'),
+              '--snp-rate', '0.001',
+              '--small-indel-rate', '0.001',
+              '--sv-indel-rate', '0.001',
+              '--sv-inversion-rate', '0.001',
+              '--sv-translocation-rate', '0.001',
+              '--sv-duplication-rate', '0.001',
+              '--min-sv-size', '50',
+              '--max-sv-size', '100',
+              '--out-breakpoints', ph.outFile('random_var3_bp.txt'),
+              ],
+        redir_stdout=ph.outFile('random_var3.vcf.stdout'),
+        redir_stderr=ph.outFile('random_var3.vcf.stderr'),
+        to_diff=[(ph.inFile('random_var3.vcf'),
+                  ph.outFile('random_var3.vcf'),
+                  transforms),
+                 (ph.inFile('random_var3.fasta'),
+                  ph.outFile('random_var3.fasta')),
+                 (ph.inFile('random_var3_bp.txt'),
+                  ph.outFile('random_var3_bp.txt')),
+                 (ph.inFile('random_var3.vcf.stderr'),
+                  ph.outFile('random_var3.vcf.stderr'),
+                  transforms),
+                 (ph.inFile('random_var3.vcf.stdout'),
+                  ph.outFile('random_var3.vcf.stdout'),
                   transforms),
                  ])
     conf_list.append(conf)
@@ -214,6 +251,7 @@ def main(source_base, binary_base):
     # Test mason_materializer
     # ============================================================
 
+    # Without methylation levels.
     conf = app_tests.TestConf(
         program=path_to_materializer,
         args=['-ir', ph.inFile('random.fasta'),
@@ -229,6 +267,31 @@ def main(source_base, binary_base):
                   transforms),
                  (ph.inFile('materializer.random_var1.stderr'),
                   ph.outFile('materializer.random_var1.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    # With methylation levels.
+    conf = app_tests.TestConf(
+        program=path_to_materializer,
+        args=['-ir', ph.inFile('random.fasta'),
+              '-iv', ph.inFile('random_var2.vcf'),
+              '-o', ph.outFile('materializer.random_var2.fasta'),
+              '--meth-fasta-in', ph.inFile('random_meth1.fasta'),
+              '--meth-fasta-out', ph.outFile('materializer.random_meth2.fasta'),
+              ],
+        redir_stdout=ph.outFile('materializer.random_var2.stdout'),
+        redir_stderr=ph.outFile('materializer.random_var2.stderr'),
+        to_diff=[(ph.inFile('random_var1.fasta'),
+                  ph.outFile('materializer.random_var1.fasta')),
+                 (ph.inFile('random_var2_meth.fasta'),
+                  ph.outFile('materializer.random_meth2.fasta'),
+                  transforms),
+                 (ph.inFile('materializer.random_var2.stdout'),
+                  ph.outFile('materializer.random_var2.stdout'),
+                  transforms),
+                 (ph.inFile('materializer.random_var2.stderr'),
+                  ph.outFile('materializer.random_var2.stderr'),
                   transforms),
                  ])
     conf_list.append(conf)

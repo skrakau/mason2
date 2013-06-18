@@ -265,20 +265,20 @@ public:
     // The Variants to materialize for.
     Variants const * variants;
     // Options for the methylation level simulator.  Methylation simulation is required for fixing methylation levels.
-    MethylationLevelSimulatorOptions methSimOptions;
+    MethylationLevelSimulatorOptions const * methSimOptions;
 
     // Verbosity.
     int verbosity;
 
-    VariantMaterializer() : rng(), variants(), verbosity(1)
+    VariantMaterializer() : rng(), variants(), methSimOptions(), verbosity(1)
     {}
 
     VariantMaterializer(TRng & rng, Variants const & variants) :
-            rng(&rng), variants(&variants),  verbosity(1)
+            rng(&rng), variants(&variants), methSimOptions(), verbosity(1)
     {}
 
     VariantMaterializer(TRng & rng, Variants const & variants, MethylationLevelSimulatorOptions const & methSimOptions) :
-            rng(&rng), variants(&variants),  methSimOptions(methSimOptions), verbosity(1)
+            rng(&rng), variants(&variants), methSimOptions(&methSimOptions), verbosity(1)
     {}
 
     // Materialize the variants from the haplotype with the given id in *variants to result given the reference sequence refSeq.

@@ -35,10 +35,6 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_VCF_MATERIALIZATION_H_
 #define SANDBOX_MASON2_APPS_MASON2_VCF_MATERIALIZATION_H_
 
-// ============================================================================
-// Forwards
-// ============================================================================
-
 #include <stdexcept>
 
 #include <seqan/sequence.h>
@@ -46,6 +42,11 @@
 #include <seqan/vcf_io.h>
 
 #include "genomic_variants.h"
+#include "methylation_levels.h"
+
+// ============================================================================
+// Forwards
+// ============================================================================
 
 // ============================================================================
 // Tags, Classes, Enums
@@ -60,6 +61,11 @@
 class VcfMaterializer
 {
 public:
+    // The random number generator to use for methylation simulation, if any.
+    TRng & rng;
+    // Options for the methylation simulation.
+    MethylationLevelSimulatorOptions const * methOptions;
+
     // ------------------------------------------------------------------------
     // Paths
     // ------------------------------------------------------------------------
@@ -68,6 +74,8 @@ public:
     seqan::CharString fastaFileName;
     // Path to VCF file.
     seqan::CharString vcfFileName;
+    // Path to methylation FASTA file.
+    seqan::CharString methFastaFileName;
 
     // ------------------------------------------------------------------------
     // State for position in reference
@@ -83,6 +91,8 @@ public:
     Variants contigVariants;
     // Current contig reference sequence.
     seqan::Dna5String contigSeq;
+    // Current methylation levels.
+    MethylationLevels currentLevels;
 
     // ------------------------------------------------------------------------
     // File Input
@@ -90,16 +100,26 @@ public:
 
     // The FAI Index to load the reference sequence from.
     seqan::FaiIndex faiIndex;
+    // The FAI Index to load the methylation sequences from.
+    seqan::FaiIndex methFaiIndex;
     // The VCF stream to load from.
     seqan::VcfStream vcfStream;
     // The current VCF record.  rID == INVALID_REFID if invalid, used for termination.
     seqan::VcfRecord vcfRecord;
 
-    VcfMaterializer() : currRID(-1), nextHaplotype(0), numHaplotypes(0)
+    VcfMaterializer(TRng & rng) : rng(rng), currRID(-1), nextHaplotype(0), numHaplotypes(0)
     {}
 
-    VcfMaterializer(char const * fastaFileName, char const * vcfFileName) :
-            fastaFileName(fastaFileName), vcfFileName(vcfFileName), currRID(-1), nextHaplotype(0), numHaplotypes(0)
+    // If you give methFastaFileName, then you also have to set methOptions.
+    //
+    // The methylation simulation assumes that there is an methylation options object.
+    VcfMaterializer(TRng & rng,
+                    char const * fastaFileName,
+                    char const * vcfFileName,
+                    char const * methFastaFileName = "",
+                    MethylationLevelSimulatorOptions const * methOptions = 0) :
+            rng(rng), methOptions(methOptions), fastaFileName(fastaFileName), vcfFileName(vcfFileName),
+            methFastaFileName(methFastaFileName), currRID(-1), nextHaplotype(0), numHaplotypes(0)
     {}
 
     // Call to open all files.
@@ -117,7 +137,15 @@ public:
     // Throws: MasonIOException
     bool materializeNext(seqan::Dna5String & seq, int & rID, int & haplotype);
 
+    // Similar to the one above but loads methylation levels into levels.  Can only work if methFastFileName is not
+    // empty.
+    bool materializeNext(seqan::Dna5String & seq, MethylationLevels & levels,
+                         int & rID, int & haplotype);
+
 private:
+
+    bool _materializeNext(seqan::Dna5String & seq, MethylationLevels * levels,
+                          int & rID, int & haplotype);
 
     // Load variants of next contig into variants.
     int _loadVariantsForContig(Variants & variants, int rID);
@@ -127,6 +155,9 @@ private:
 
     // Append chunk of 6 BND records to variants.
     void _appendToVariantsBnd(Variants & variants, std::vector<seqan::VcfRecord> const & vcfRecords);
+
+    // Load the levels for the contig with the given rID.
+    void _loadLevels(int rID);
 };
 
 // ============================================================================

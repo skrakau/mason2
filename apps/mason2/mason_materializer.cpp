@@ -64,15 +64,25 @@ public:
     // The configuration to use.
     MasonMaterializerOptions const & options;
 
+    // The random number generation.
+    TRng rng;
+
     // Materialization of VCF.
     VcfMaterializer vcfMat;
-    
+
     // Output sequence stream.
     seqan::SequenceStream outStream;
+    // Input and output for methylation.
+    seqan::FaiIndex methFaiIndex;
+    seqan::SequenceStream outMethLevelStream;
 
-    MasonMaterializerApp(MasonMaterializerOptions const & options) :
-            options(options), vcfMat(toCString(options.matOptions.fastaFileName),
-                                     toCString(options.matOptions.vcfFileName))
+    MasonMaterializerApp(MasonMaterializerOptions const & _options) :
+            options(_options), rng(options.seed),
+            vcfMat(rng,
+                   toCString(options.matOptions.fastaFileName),
+                   toCString(options.matOptions.vcfFileName),
+                   toCString(options.methFastaInFile),
+                   &options.methOptions)
     {}
 
     int run()
@@ -85,9 +95,17 @@ public:
         try
         {
             vcfMat.init();
+
             open(outStream, toCString(options.outputFileName), seqan::SequenceStream::WRITE);
             if (!isGood(outStream))
                 throw MasonIOException("Could not open output file.");
+
+            if (options.methOptions.simulateMethylationLevels)
+            {
+                open(outMethLevelStream, toCString(options.methFastaOutFile), seqan::SequenceStream::WRITE);
+                if (!isGood(outMethLevelStream))
+                    throw MasonIOException("Could not open methylation output file.");
+            }
         }
         catch (MasonIOException e)
         {
@@ -104,19 +122,45 @@ public:
         int rID = 0, hID = 0;
         seqan::Dna5String seq;
         std::cerr << "Materializing...";
-        while (vcfMat.materializeNext(seq, rID, hID))
-        {
-            std::stringstream ssName;
-            ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << (hID + 1);
-            std::cerr << " " << ssName.str();
-            
-            if (writeRecord(outStream, ssName.str(), seq) != 0)
+        MethylationLevels levels;
+        if (options.methOptions.simulateMethylationLevels)  // methylation level simulation
+            while (vcfMat.materializeNext(seq, levels, rID, hID))
             {
-                std::cerr << "ERROR: Could not write materialized sequence to output.\n";
-                return 1;
+                std::stringstream ssName;
+                ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << (hID + 1);
+                std::cerr << " " << ssName.str();
+            
+                if (writeRecord(outStream, ssName.str(), seq) != 0)
+                {
+                    std::cerr << "ERROR: Could not write materialized sequence to output.\n";
+                    return 1;
+                }
+
+                std::stringstream ssTop;
+                ssTop << ssName.str() << "/TOP";
+                if (writeRecord(outMethLevelStream, ssTop.str(), levels.forward) != 0)
+                    throw MasonIOException("Problem writing to methylation output file.");
+                std::stringstream ssBottom;
+                ssBottom << ssName.str() << "/BOT";
+                if (writeRecord(outMethLevelStream, ssBottom.str(), levels.reverse) != 0)
+                    throw MasonIOException("Problem writing to methylation output file.");
             }
-        }
+        else  // NO methylation level simulation
+            while (vcfMat.materializeNext(seq, rID, hID))
+            {
+                std::stringstream ssName;
+                ssName << vcfMat.vcfStream.header.sequenceNames[rID] << options.haplotypeNameSep << (hID + 1);
+                std::cerr << " " << ssName.str();
+            
+                if (writeRecord(outStream, ssName.str(), seq) != 0)
+                {
+                    std::cerr << "ERROR: Could not write materialized sequence to output.\n";
+                    return 1;
+                }
+            }
         std::cerr << " DONE\n";
+
+        std::cerr << "\nDone materializing VCF file.\n";
 
         return 0;
     }
@@ -186,7 +230,11 @@ int main(int argc, char const ** argv)
     
     // Print the command line arguments back to the user.
     if (options.verbosity > 0)
+    {
+        std::cerr << "__OPTIONS____________________________________________________________________\n"
+                  << "\n";
         options.print(std::cerr);
+    }
 
     MasonMaterializerApp app(options);
     return app.run();

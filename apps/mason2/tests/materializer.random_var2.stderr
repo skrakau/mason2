@@ -10,21 +10,21 @@ VERBOSITY               	NORMAL
 
 SEED                    	0
 
-OUTPUT FILE             	materializer.random_var1.fasta
-METHYLATION LEVEL INPUT 	
-METHYLATION LEVEL OUTPUT	
+OUTPUT FILE             	materializer.random_var2.fasta
+METHYLATION LEVEL INPUT 	random_meth1.fasta
+METHYLATION LEVEL OUTPUT	materializer.random_meth2.fasta
 
 HAPLOTYPE NAME SEP      	/
 
 MATERIALIZER OPTIONS
   VERBOSITY      	NORMAL
   REFERENCE FASTA	random.fasta
-  VARIANTS VCF   	random_var1.vcf
+  VARIANTS VCF   	random_var2.vcf
 
 METHYLATION LEVELS OPTIONS
   VERBOSITY      	NORMAL
 
-  ENABLED	NO
+  ENABLED	YES
 
   MEDIAN C	0.0001
   STDDEV C	1e-05

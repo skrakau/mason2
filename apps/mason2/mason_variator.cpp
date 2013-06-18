@@ -198,7 +198,7 @@ void print(std::ostream & out, MasonVariatorOptions const & options)
 class StructuralVariantSimulator
 {
 public:
-    // Random number generator
+    // Random number generators for variant simulation.
     TRng & rng;
 
     // FAI Index for loading sequence contig-wise.
@@ -600,7 +600,11 @@ public:
 class MasonVariatorApp
 {
 public:
+    // Random number generator for variant simulation and methylation level simulation.  We need separate random number
+    // generations since we interleave variant and methylation level simulation and we want mason_materializer and
+    // mason_variator to yield the same results.
     TRng & rng;
+    TRng & methRng;
 
     MasonVariatorOptions options;
 
@@ -620,9 +624,9 @@ public:
     // File to write breakpoints to.
     std::fstream breakpointsOut;
 
-    MasonVariatorApp(TRng & rng, seqan::FaiIndex const & faiIndex,
+    MasonVariatorApp(TRng & rng, TRng & methRng, seqan::FaiIndex const & faiIndex,
                      MasonVariatorOptions const & options) :
-            rng(rng), options(options), faiIndex(faiIndex)
+            rng(rng), methRng(methRng), options(options), faiIndex(faiIndex)
     {
         _init();
     }
@@ -794,7 +798,7 @@ public:
     // Simulate methylation levels.
     int _simulateMethLevels(MethylationLevels & levels, int rId)
     {
-        MethylationLevelSimulator methSim(rng, options.methSimOptions);
+        MethylationLevelSimulator methSim(methRng, options.methSimOptions);
         seqan::Dna5String contig;
         if (!readSequence(contig, faiIndex, rId))
             methSim.run(levels, contig);
@@ -812,7 +816,7 @@ public:
         std::stringstream idTop;
         idTop << sequenceName(faiIndex, rId);
         if (hId != -1)
-            idTop << options.haplotypeSep << hId;
+            idTop << options.haplotypeSep << (hId + 1);
         idTop << options.haplotypeSep << "TOP";
         if (writeRecord(outMethLevelStream, idTop.str(), levels.forward) != 0)
         {
@@ -823,7 +827,7 @@ public:
         std::stringstream idBottom;
         idBottom << sequenceName(faiIndex, rId);
         if (hId != -1)
-            idBottom << options.haplotypeSep << hId;
+            idBottom << options.haplotypeSep << (hId + 1);
         idBottom << options.haplotypeSep << "BOT";
         if (writeRecord(outMethLevelStream, idBottom.str(), levels.reverse) != 0)
         {
@@ -919,8 +923,9 @@ public:
         // Apply variants to contigs and write out.
         if (!empty(options.fastaOutFile))
         {
-            // Write out methylation levels for reference.
-            if (options.methSimOptions.simulateMethylationLevels && !empty(options.methFastaOutFile))
+            // Write out methylation levels for reference except when they were already in the input.
+            if (options.methSimOptions.simulateMethylationLevels && !empty(options.methFastaOutFile) &&
+                empty(options.methFastaInFile))
                 if (_writeMethylationLevels(methLevels, -1, rId) != 0)
                     return 1;
             // Apply variations to contigs and write out.
@@ -937,7 +942,7 @@ public:
     int _writeContigs(seqan::Dna5String const & contig, Variants const & variants, MethylationLevels const & levels, int rId, int hId)
     {
         // Create contig with the small and large variants.
-        VariantMaterializer varMat(rng, variants, options.methSimOptions);
+        VariantMaterializer varMat(methRng, variants, options.methSimOptions);
         seqan::Dna5String seqVariants;
         std::vector<int> breakpoints;
         if (options.methSimOptions.simulateMethylationLevels)
@@ -1509,8 +1514,8 @@ parseCommandLine(MasonVariatorOptions & options, int argc, char const ** argv)
     setCategory(parser, "Simulators");
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-ov\\fP \\fIOUT.vcf\\fP [\\fB-of\\fP \\fIOUT.fa\\fP]");
-    // addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-if\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-of\\fP \\fIOUT.fa\\fP");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-ov\\fP \\fIOUT.vcf\\fP [\\fB-of\\fP \\fIOUT.fa\\fP]");
+
     addDescription(parser,
                    "Either simulate variation and write out the result to VCF and optionally FASTA files.");
     // addDescription(parser,
@@ -1795,8 +1800,10 @@ int main(int argc, char const ** argv)
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res == seqan::ArgumentParser::PARSE_ERROR;
 
-    // Initialize random number generator.
+    // Initialize random number generators.  We need two so mason_variator and mason_materializer can yield the same
+    // result.
     TRng rng(options.seed);
+    TRng methRng(options.seed);
 
     std::cerr << "MASON VARIATOR\n"
               << "==============\n\n";
@@ -1836,7 +1843,7 @@ int main(int argc, char const ** argv)
     std::cerr << "\n__SIMULATION__________________________________________________________________\n"
               << "\n";
 
-    MasonVariatorApp app(rng, faiIndex, options);
+    MasonVariatorApp app(rng, methRng, faiIndex, options);
     app.run();
 
     std::cerr << "\nDONE.\n";

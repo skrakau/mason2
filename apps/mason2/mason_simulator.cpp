@@ -290,8 +290,9 @@ public:
     // The configuration to use for the simulation.
     MasonSimulatorOptions options;
 
-    // The random number generator to use for the simulation.
-    TRng rng;
+    // The random number generator to use for the simulation and a separate one for the methylation levels when
+    // materalizing the contig.
+    TRng rng, methRng;
 
     // Threads used for simulation.
     std::vector<ReadSimulatorThread> threads;
@@ -343,8 +344,9 @@ public:
     seqan::BamStream outBamStream;
 
     MasonSimulatorApp(MasonSimulatorOptions const & options) :
-            options(options), rng(options.seed),
-            vcfMat(toCString(options.matOptions.fastaFileName), toCString(options.matOptions.vcfFileName)),
+            options(options), rng(options.seed), methRng(options.seed),
+            vcfMat(methRng, toCString(options.matOptions.fastaFileName),
+                   toCString(options.matOptions.vcfFileName)),
             contigPicker(rng), nameStoreCache(nameStore), bamIOContext(nameStore, nameStoreCache)
     {}
 

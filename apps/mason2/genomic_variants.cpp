@@ -139,8 +139,11 @@ int VariantMaterializer::_materializeSmallVariants(
         MethylationLevels const * levels,
         int hId)
 {
-    SEQAN_ASSERT_EQ(methSimOptions.simulateMethylationLevels, (levelsSmallVariants != 0));
-    SEQAN_ASSERT_EQ(methSimOptions.simulateMethylationLevels, (levels != 0));
+    if (methSimOptions)
+    {
+        SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levelsSmallVariants != 0));
+        SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levels != 0));
+    }
     
     // Clear journal and output methylation levels.
     reinit(journal, length(contig));
@@ -183,7 +186,7 @@ int VariantMaterializer::_materializeSmallVariants(
                     std::cerr << "append(seq, infix(contig, " << lastPos << ", " << snpRecord.pos << ") " << __LINE__ << "\n";
                 // Append interim sequence and methylation levels->
                 append(seq, infix(contig, lastPos, snpRecord.pos));
-                if (methSimOptions.simulateMethylationLevels)
+                if (methSimOptions && methSimOptions->simulateMethylationLevels)
                 {
                     append(levelsSmallVariants->forward, infix(levels->forward, lastPos, snpRecord.pos + 1));
                     append(levelsSmallVariants->reverse, infix(levels->reverse, lastPos, snpRecord.pos + 1));
@@ -216,15 +219,15 @@ int VariantMaterializer::_materializeSmallVariants(
 
                     // Simulate methylation levels for insertion.
                     MethylationLevels lvls;
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
-                        MethylationLevelSimulator methSim(*rng, methSimOptions);
+                        MethylationLevelSimulator methSim(*rng, *methSimOptions);
                         methSim.run(lvls, smallIndelRecord.seq);
                     }
 
                     // Append interim sequence and methylation levels->
                     append(seq, infix(contig, lastPos, smallIndelRecord.pos));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         append(levelsSmallVariants->forward, infix(levels->forward, lastPos, smallIndelRecord.pos));
                         append(levelsSmallVariants->reverse, infix(levels->reverse, lastPos, smallIndelRecord.pos));
@@ -236,7 +239,7 @@ int VariantMaterializer::_materializeSmallVariants(
                         std::cerr << "append(seq, \"" << smallIndelRecord.seq << "\") " << __LINE__ << "\n";
                     // Append novel sequence and methylation levels->
                     append(seq, smallIndelRecord.seq);
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         append(levelsSmallVariants->forward, lvls.forward);
                         append(levelsSmallVariants->reverse, lvls.reverse);
@@ -254,7 +257,7 @@ int VariantMaterializer::_materializeSmallVariants(
                         std::cerr << "append(seq, infix(contig, " << lastPos << ", " << smallIndelRecord.pos << ") " << __LINE__ << "\n";
                     // Append interim sequence and methylation levels->
                     append(seq, infix(contig, lastPos, smallIndelRecord.pos));  // interim chars
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));  // variation point at deletion
                         append(levelsSmallVariants->forward, infix(levels->forward, lastPos, smallIndelRecord.pos));
@@ -281,7 +284,7 @@ int VariantMaterializer::_materializeSmallVariants(
         std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ")\n";
     append(seq, infix(contig, lastPos, length(contig)));
 
-    if (methSimOptions.simulateMethylationLevels)
+    if (methSimOptions && methSimOptions->simulateMethylationLevels)
     {
         append(levelsSmallVariants->forward, infix(levels->forward, lastPos, length(contig)));
         append(levelsSmallVariants->reverse, infix(levels->reverse, lastPos, length(contig)));
@@ -289,7 +292,7 @@ int VariantMaterializer::_materializeSmallVariants(
         SEQAN_ASSERT_EQ(length(seq), length(levelsSmallVariants->forward));
         SEQAN_ASSERT_EQ(length(seq), length(levelsSmallVariants->reverse));
 
-        fixVariationLevels(*levelsSmallVariants, *rng, seq, varPoints, methSimOptions);
+        fixVariationLevels(*levelsSmallVariants, *rng, seq, varPoints, *methSimOptions);
     }
 
     return 0;
@@ -309,8 +312,11 @@ int VariantMaterializer::_materializeLargeVariants(
         MethylationLevels const * levels,
         int hId)
 {
-    SEQAN_ASSERT_EQ(methSimOptions.simulateMethylationLevels, (levelsLargeVariants != 0));
-    SEQAN_ASSERT_EQ(methSimOptions.simulateMethylationLevels, (levels != 0));
+    if (methSimOptions)
+    {
+        SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levelsLargeVariants != 0));
+        SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levels != 0));
+    }
 
     // Clear output methylation levels->
     if (levelsLargeVariants)
@@ -352,7 +358,7 @@ int VariantMaterializer::_materializeLargeVariants(
         if (verbosity >= 3)
             std::cerr << "lastPos == " << lastPos << "\n";
         append(seq, infix(contig, lastPos, svRecord.pos));  // interim chars
-        if (methSimOptions.simulateMethylationLevels)
+        if (methSimOptions && methSimOptions->simulateMethylationLevels)
         {
             append(levelsLargeVariants->forward, infix(levels->forward, lastPos, svRecord.pos));
             append(levelsLargeVariants->reverse, infix(levels->reverse, lastPos, svRecord.pos));
@@ -371,15 +377,15 @@ int VariantMaterializer::_materializeLargeVariants(
 
                         // Simulate methylation levels for insertion.
                         MethylationLevels lvls;
-                        if (methSimOptions.simulateMethylationLevels)
+                        if (methSimOptions && methSimOptions->simulateMethylationLevels)
                         {
-                            MethylationLevelSimulator methSim(*rng, methSimOptions);
+                            MethylationLevelSimulator methSim(*rng, *methSimOptions);
                             methSim.run(lvls, svRecord.seq);
                         }
 
                         // Append novel sequence and methylation levels->
                         append(seq, svRecord.seq);
-                        if (methSimOptions.simulateMethylationLevels)
+                        if (methSimOptions && methSimOptions->simulateMethylationLevels)
                         {
                             append(levelsLargeVariants->forward, lvls.forward);
                             append(levelsLargeVariants->reverse, lvls.reverse);
@@ -410,7 +416,7 @@ int VariantMaterializer::_materializeLargeVariants(
                 {
                     unsigned oldLen = length(seq);
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));  // variation point at deletion
                         append(levelsLargeVariants->forward, infix(levels->reverse, svRecord.pos, svRecord.pos + svRecord.size));
@@ -436,14 +442,14 @@ int VariantMaterializer::_materializeLargeVariants(
                 {
                     SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
                     append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos + svRecord.size, svRecord.targetPos));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
                     }
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
@@ -467,21 +473,21 @@ int VariantMaterializer::_materializeLargeVariants(
                 {
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
                     SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos, svRecord.pos + svRecord.size));
                     }
                     append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos + svRecord.size, svRecord.targetPos));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
                     }
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
-                    if (methSimOptions.simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
@@ -511,7 +517,7 @@ int VariantMaterializer::_materializeLargeVariants(
         std::cerr << "append(seq, infix(contig, " << lastPos << ", " << length(contig) << ") "
                   << __LINE__ << " (last interim)\n";
     append(seq, infix(contig, lastPos, length(contig)));
-    if (methSimOptions.simulateMethylationLevels)
+    if (methSimOptions && methSimOptions->simulateMethylationLevels)
     {
         append(levelsLargeVariants->forward, infix(levels->forward, lastPos, length(contig)));
         append(levelsLargeVariants->reverse, infix(levels->reverse, lastPos, length(contig)));
@@ -519,7 +525,7 @@ int VariantMaterializer::_materializeLargeVariants(
         SEQAN_ASSERT_EQ(length(seq), length(levelsLargeVariants->forward));
         SEQAN_ASSERT_EQ(length(seq), length(levelsLargeVariants->reverse));
 
-        fixVariationLevels(*levelsLargeVariants, *rng, seq, varPoints, methSimOptions);
+        fixVariationLevels(*levelsLargeVariants, *rng, seq, varPoints, *methSimOptions);
     }
         
     return 0;

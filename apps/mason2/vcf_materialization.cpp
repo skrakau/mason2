@@ -161,6 +161,43 @@ void VcfMaterializer::init()
         if (write(faiIndex, toCString(faiPath)) != 0)
             throw MasonIOException("Could not write FAI index.");
     }
+
+    // Open methylation FASTA FAI file if given.
+    if (!empty(methFastaFileName))
+    {
+        if (read(methFaiIndex, toCString(methFastaFileName)) != 0)
+        {
+            if (build(faiIndex, toCString(methFastaFileName)) != 0)
+                throw MasonIOException("Could not build methylation levels FAI index.");
+
+            seqan::CharString faiPath = methFastaFileName;
+            append(faiPath, ".fai");
+            if (write(faiIndex, toCString(faiPath)) != 0)
+                throw MasonIOException("Could not write methylation levels FAI index.");
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function VcfMaterializer::_loadLevels()
+// ----------------------------------------------------------------------------
+
+void VcfMaterializer::_loadLevels(int rID)
+{
+    currentLevels.clear();
+
+    std::stringstream ssTop, ssBottom;
+    ssTop << sequenceName(faiIndex, rID) << "/TOP";
+    unsigned idx = 0;
+    if (!getIdByName(methFaiIndex, ssTop.str().c_str(), idx))
+        throw MasonIOException("Could not find top levels in methylation FASTA.");
+    if (readSequence(currentLevels.forward, methFaiIndex, idx) != 0)
+        throw MasonIOException("Could not load top levels from methylation FASTA.");
+    ssBottom << sequenceName(faiIndex, rID) << "/BOT";
+    if (!getIdByName(methFaiIndex, ssBottom.str().c_str(), idx))
+        throw MasonIOException("Could not find bottom levels in methylation FASTA.");
+    if (readSequence(currentLevels.reverse, methFaiIndex, idx) != 0)
+        throw MasonIOException("Could not load bottom levels from methylation FASTA.");
 }
 
 // ----------------------------------------------------------------------------
@@ -169,6 +206,25 @@ void VcfMaterializer::init()
 
 bool VcfMaterializer::materializeNext(seqan::Dna5String & seq, int & rID, int & haplotype)
 {
+    return _materializeNext(seq, 0, rID, haplotype);
+}
+
+bool VcfMaterializer::materializeNext(seqan::Dna5String & seq, MethylationLevels & levels,
+                                      int & rID, int & haplotype)
+{
+    return _materializeNext(seq, &levels, rID, haplotype);
+}
+
+// ----------------------------------------------------------------------------
+// Function VcfMaterializer::_materializeNext()
+// ----------------------------------------------------------------------------
+
+bool VcfMaterializer::_materializeNext(seqan::Dna5String & seq, MethylationLevels * levels,
+                                       int & rID, int & haplotype)
+{
+    if (levels)
+        SEQAN_CHECK(!empty(methFastaFileName), "Must initialize with methylation FASTA file for levels");
+
     if (empty(vcfFileName))
     {
         if (currRID >= (int)(numSeqs(faiIndex) - 1))
@@ -177,6 +233,8 @@ bool VcfMaterializer::materializeNext(seqan::Dna5String & seq, int & rID, int & 
         rID = currRID;
         if (readSequence(seq, faiIndex, currRID) != 0)
             throw MasonIOException("Could not load reference sequence.");
+        if (levels && !empty(methFastaFileName))
+            _loadLevels(currRID);
         return true;
     }
 
@@ -196,14 +254,18 @@ bool VcfMaterializer::materializeNext(seqan::Dna5String & seq, int & rID, int & 
         _loadVariantsForContig(contigVariants, currRID);
         if (readSequence(contigSeq, faiIndex, currRID) != 0)
             throw MasonIOException("Could not load reference sequence.");
+        if (levels && !empty(methFastaFileName))
+            _loadLevels(currRID);
     }
 
-    TRng rng;  // Will not be touched by materializer since methylation simulation is not enabled.
     std::vector<int> breakpoints;  // unused
 
     // Materialize variants for the current haplotype.
-    VariantMaterializer varMat(rng, contigVariants);
-    varMat.run(seq, breakpoints, contigSeq, nextHaplotype);
+    VariantMaterializer varMat(rng, contigVariants, *methOptions);
+    if (levels)
+        varMat.run(seq, *levels, breakpoints, contigSeq, currentLevels, nextHaplotype);
+    else
+        varMat.run(seq, breakpoints, contigSeq, nextHaplotype);
 
     // Write out rID and haploty
     rID = currRID;

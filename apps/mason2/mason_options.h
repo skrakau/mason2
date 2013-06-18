@@ -104,7 +104,7 @@ struct MethylationLevelSimulatorOptions
     double methMuCHH, methSigmaCHH;
 
     MethylationLevelSimulatorOptions() :
-            simulateMethylationLevels(false), methMuC(0), methSigmaC(0), methMuCG(0), methSigmaCG(0),
+            verbosity(1), simulateMethylationLevels(false), methMuC(0), methSigmaC(0), methMuCG(0), methSigmaCG(0),
             methMuCHG(0), methSigmaCHG(0), methMuCHH(0), methSigmaCHH(0)
     {}
 
@@ -139,7 +139,9 @@ struct MaterializerOptions
     // Path to VCF file.  No variation is applied if empty.
     seqan::CharString vcfFileName;
 
-    MaterializerOptions() : verbosity(0)
+    // TODO(holtgrew): Add options for methylation levels FASTA input here?
+
+    MaterializerOptions() : verbosity(1)
     {}
 
     // Add options to the argument parser.
@@ -204,7 +206,7 @@ struct FragmentSamplerOptions
     */
 
     FragmentSamplerOptions() :
-            verbosity(0), minFragmentSize(0), maxFragmentSize(0), meanFragmentSize(0), stdDevFragmentSize(0),
+            verbosity(1), minFragmentSize(0), maxFragmentSize(0), meanFragmentSize(0), stdDevFragmentSize(0),
             model(UNIFORM)
     {}
 
@@ -276,7 +278,7 @@ struct SequencingOptions
     SequencingTechnology sequencingTechnology;
 
     SequencingOptions() :
-            verbosity(0), simulateQualities(false), simulateMatePairs(false), embedReadInfo(false),
+            verbosity(1), simulateQualities(false), simulateMatePairs(false), embedReadInfo(false),
             mateOrientation(FORWARD_REVERSE), strands(BOTH), sequencingTechnology(ILLUMINA)
     {}
 
@@ -370,7 +372,7 @@ struct IlluminaSequencingOptions
     double stdDevMismatchQualityEnd;
 
     IlluminaSequencingOptions() :
-            verbosity(0),
+            verbosity(1),
             readLength(0),
             defaultOrientation(SequencingOptions::FORWARD_REVERSE),
             // Base Calling Error Model Parameters
@@ -465,7 +467,7 @@ struct SangerSequencingOptions
     double qualityErrorEndStdDev;
 
     SangerSequencingOptions() :
-            verbosity(0),
+            verbosity(1),
             defaultOrientation(SequencingOptions::FORWARD_REVERSE),
             readLengthIsUniform(false),
             readLengthMean(400),
@@ -553,7 +555,7 @@ struct Roche454SequencingOptions
     double backgroundNoiseStdDev;
 
     Roche454SequencingOptions() :
-            verbosity(0),
+            verbosity(1),
             defaultOrientation(SequencingOptions::FORWARD_FORWARD2),
             lengthModel(UNIFORM),
             minReadLength(0),
@@ -631,7 +633,7 @@ struct MasonSimulatorOptions
     Roche454SequencingOptions rocheOptions;
 
     MasonSimulatorOptions() :
-            verbosity(0), seed(0), seedSpacing(2048), numThreads(1), chunkSize(64*1024), numFragments(0)
+            verbosity(1), seed(0), seedSpacing(2048), numThreads(1), chunkSize(64*1024), numFragments(0)
     {}
 
     // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.
@@ -658,15 +660,24 @@ struct MasonMaterializerOptions
     // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
 
+    // Seed to use in RNG.
+    int seed;
+    
     // Options for the materializer.
     MaterializerOptions matOptions;
+    // Options for the methylation simulation.
+    MethylationLevelSimulatorOptions methOptions;
 
     // Path to output file.
     seqan::CharString outputFileName;
     // Separator between contig names and haplotype number.
     seqan::CharString haplotypeNameSep;
+    // FASTA file to load the methylation levels from.
+    seqan::CharString methFastaInFile;
+    // FASTA file to write the methylation levels to.
+    seqan::CharString methFastaOutFile;
 
-    MasonMaterializerOptions() : verbosity(0)
+    MasonMaterializerOptions() : verbosity(1), seed(0)
     {}
 
     // Add options to the argument parser.
@@ -711,7 +722,7 @@ struct MasonFragmentSequencingOptions
     // Configuration of the Roche 454 read simulation.
     Roche454SequencingOptions rocheOptions;
 
-    MasonFragmentSequencingOptions() : verbosity(0), seed(0)
+    MasonFragmentSequencingOptions() : verbosity(1), seed(0)
     {}
 
     // Add options to the argument parser.  Calls addOptions() on the nested *Options objects.

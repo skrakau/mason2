@@ -220,6 +220,8 @@ void MethylationLevelSimulatorOptions::print(std::ostream & out) const
     out << "METHYLATION LEVELS OPTIONS\n"
         << "  VERBOSITY      \t" << getVerbosityStr(verbosity) << "\n"
         << "\n"
+        << "  ENABLED\t" << getYesNoStr(simulateMethylationLevels) << "\n"
+        << "\n"
         << "  MEDIAN C\t" << methMuC << "\n"
         << "  STDDEV C\t" << methSigmaC << "\n"
         << "  MEDIAN CG\t" << methMuCG << "\n"
@@ -1141,6 +1143,10 @@ void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
     addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
 
+    addOption(parser, seqan::ArgParseOption("", "seed", "Seed for random number generation.",
+                                            seqan::ArgParseOption::INTEGER, "Int"));
+    setDefaultValue(parser, "seed", "0");
+
     addOption(parser, seqan::ArgParseOption("o", "out", "Output of materialized contigs.",
                                             seqan::ArgParseOption::OUTPUTFILE, "OUT"));
     setRequired(parser, "out");
@@ -1151,8 +1157,17 @@ void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
                                             seqan::ArgParseOption::STRING, "SEP"));
     setDefaultValue(parser, "haplotype-name-sep", "/");
 
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-in", "FASTA file with methylation levels of the input file.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN"));
+    setValidValues(parser, "meth-fasta-in", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-out", "FASTA file with methylation levels of the output file.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
+    setValidValues(parser, "meth-fasta-out", "fa fasta");
+
     // Add options of the component options.
     matOptions.addOptions(parser);
+    methOptions.addOptions(parser);
 }
 
 // ----------------------------------------------------------------------------
@@ -1163,6 +1178,7 @@ void MasonMaterializerOptions::addTextSections(seqan::ArgumentParser & parser) c
 {
     // Add text sections of the component options.
     matOptions.addTextSections(parser);
+    methOptions.addTextSections(parser);
 }
 
 // ----------------------------------------------------------------------------
@@ -1178,14 +1194,22 @@ void MasonMaterializerOptions::getOptionValues(seqan::ArgumentParser const & par
         verbosity = 2;
     if (isSet(parser, "very-verbose"))
         verbosity = 3;
+    getOptionValue(seed, parser, "seed");
     getOptionValue(outputFileName, parser, "out");
     getOptionValue(haplotypeNameSep, parser, "haplotype-name-sep");
+    getOptionValue(methFastaInFile, parser, "meth-fasta-in");
+    getOptionValue(methFastaOutFile, parser, "meth-fasta-out");
 
     // Get options for the other components that we use.
     matOptions.getOptionValues(parser);
+    methOptions.getOptionValues(parser);
 
     // Copy in the verbosity flag into the component options.
     matOptions.verbosity = verbosity;
+    methOptions.verbosity = verbosity;
+
+    // Set methylation simulation enabled flag.
+    methOptions.simulateMethylationLevels = !empty(methFastaInFile) && !empty(methFastaOutFile);
 }
 
 // ----------------------------------------------------------------------------
@@ -1197,13 +1221,19 @@ void MasonMaterializerOptions::print(std::ostream & out) const
     out << "MASON MATERIALIZER OPTIONS\n"
         << "--------------------------\n"
         << "\n"
-        << "VERBOSITY         \t" << getVerbosityStr(verbosity) << "\n"
+        << "VERBOSITY               \t" << getVerbosityStr(verbosity) << "\n"
         << "\n"
-        << "OUTPUT FILE       \t" << outputFileName << "\n"
+        << "SEED                    \t" << seed << "\n"
         << "\n"
-        << "HAPLOTYPE NAME SEP\t" << haplotypeNameSep << "\n"
+        << "OUTPUT FILE             \t" << outputFileName << "\n"
+        << "METHYLATION LEVEL INPUT \t" << methFastaInFile << "\n"
+        << "METHYLATION LEVEL OUTPUT\t" << methFastaOutFile << "\n"
+        << "\n"
+        << "HAPLOTYPE NAME SEP      \t" << haplotypeNameSep << "\n"
         << "\n";
     matOptions.print(out);
+    out << "\n";
+    methOptions.print(out);
     out << "\n";
 }
 
