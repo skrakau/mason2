@@ -17,16 +17,14 @@ IMPORTANT
 ---------
 
  * use heap/tournament tree for merging in FastaJoiner
- * simulation of BS-seq reads
  * color-space data
  * testing, FASTQ profiles etc.
+ * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
 
 LATER
 -----
 
  * exceptions instead of return codes
- * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
- * simulation from splicing data, spliced SAM as gold output
  * add simulation of adaptors/barcodes
  * PacBio read error models?
  * different quality scales
