@@ -70,6 +70,9 @@ public:
     std::vector<Fragment> fragments;
     FragmentSampler * fragSampler;
 
+    // Methylation levels to use, points to empty levels if methylation is disabled.
+    MethylationLevels const * methLevels;
+
     // The sequencing simulator to use.
     SequencingSimulator * seqSimulator;
 
@@ -82,7 +85,7 @@ public:
     bool buildAlignments;  // Whether or not compute the BAM alignment records.
     std::vector<seqan::BamAlignmentRecord> alignmentRecords;
 
-    ReadSimulatorThread() : options(), fragSampler(), seqSimulator(), buildAlignments(false)
+    ReadSimulatorThread() : options(), fragSampler(), methLevels(), seqSimulator(), buildAlignments(false)
     {}
 
     ~ReadSimulatorThread()
@@ -303,6 +306,8 @@ public:
 
     // Materialization of the contigs from a VCF file.
     VcfMaterializer vcfMat;
+    // FAI Index for loading methylation levels.
+    seqan::FaiIndex methFaiIndex;
 
     // ----------------------------------------------------------------------
     // Sample Source Distribution
@@ -345,8 +350,11 @@ public:
 
     MasonSimulatorApp(MasonSimulatorOptions const & options) :
             options(options), rng(options.seed), methRng(options.seed),
-            vcfMat(methRng, toCString(options.matOptions.fastaFileName),
-                   toCString(options.matOptions.vcfFileName)),
+            vcfMat(methRng,
+                   toCString(options.matOptions.fastaFileName),
+                   toCString(options.matOptions.vcfFileName),
+                   toCString(options.methFastaInFile),
+                   &options.methOptions),
             contigPicker(rng), nameStoreCache(nameStore), bamIOContext(nameStore, nameStoreCache)
     {}
 
@@ -371,7 +379,9 @@ public:
         int hID = 0;  // current haplotype id
         int contigFragmentCount = 0;  // number of reads on the contig
         // Note that all shared variables are correctly synchronized by implicit flushes at the critical sections below.
-        while (vcfMat.materializeNext(contigSeq, rID, hID))
+        MethylationLevels levels;
+        while ((options.methOptions.simulateMethylationLevels && vcfMat.materializeNext(contigSeq, levels, rID, hID)) ||
+               (!options.methOptions.simulateMethylationLevels && vcfMat.materializeNext(contigSeq, rID, hID)))
         {
             std::cerr << "  " << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
             contigFragmentCount = 0;
@@ -383,6 +393,7 @@ public:
                 {
                     // Read in the ids of the fragments to simulate.
                     threads[tID].fragmentIds.resize(options.chunkSize);  // make space
+                    threads[tID].methLevels = &levels;
 
                     // Load the fragment ids to simulate for.
                     int numRead = fread(&threads[tID].fragmentIds[0], sizeof(int), options.chunkSize,

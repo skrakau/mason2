@@ -82,6 +82,47 @@ struct MasonSimulateGenomeOptions
 };
 
 // ----------------------------------------------------------------------------
+// Class BSSeqOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for BS-Seq treatment simulation.
+
+struct BSSeqOptions
+{
+    // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // The BS simulation type to use.
+    enum BSProtocol
+    {
+        DIRECTIONAL,
+        UNDIRECTIONAL
+    };
+
+    // Whether or not BS-treatment is enabled or not.
+    bool bsSimEnabled;
+    // The rate that unmethylated Cs to become Ts.
+    double bsConversionRate;
+    // The protocol to use for the simulation.
+    BSProtocol bsProtocol;
+
+    BSSeqOptions() : verbosity(1), bsSimEnabled(false), bsConversionRate(1.0), bsProtocol(DIRECTIONAL)
+    {}
+
+    // Add options to the argument parser.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+// ----------------------------------------------------------------------------
 // Class MethylationLevelSimulatorOptions
 // ----------------------------------------------------------------------------
 
@@ -261,6 +302,9 @@ struct SequencingOptions
         ROCHE_454,
         SANGER
     };
+
+    // Options for BS-Seq simulation.
+    BSSeqOptions bsSeqOptions;
 
     // Prefix to give all reads.
     seqan::CharString readNamePrefix;
@@ -612,6 +656,8 @@ struct MasonSimulatorOptions
     // Number of reads/pairs to simulate.
     int numFragments;
 
+    // Path to input methylation FASTA file.
+    seqan::CharString methFastaInFile;
     // Path to output sequence files for left (and single end) and right reads.
     seqan::CharString outFileNameLeft, outFileNameRight;
     // Path to output SAM file.
@@ -619,6 +665,8 @@ struct MasonSimulatorOptions
 
     // Configuration for the reading of the reference and application of the variants from the VCF file.
     MaterializerOptions matOptions;
+    // Configuration for the methylation simulation.  Required for repairing methylation levels after variation.
+    MethylationLevelSimulatorOptions methOptions;
 
     // Configuration for sampling references.
     FragmentSamplerOptions fragSamplerOptions;

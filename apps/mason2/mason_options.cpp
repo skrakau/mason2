@@ -124,6 +124,23 @@ char const * getFragmentSizeModelStr(Roche454SequencingOptions::ReadLengthModel 
 }
 
 // ----------------------------------------------------------------------------
+// Function getBSSeqProtocolStr()
+// ----------------------------------------------------------------------------
+
+char const * getBSSeqProtocolStr(BSSeqOptions::BSProtocol protocol)
+{
+    switch (protocol)
+    {
+        case BSSeqOptions::DIRECTIONAL:
+            return "DIRECTIONAL";
+        case BSSeqOptions::UNDIRECTIONAL:
+            return "UNDIRECTIONAL";
+        default:
+            return "<invalid>";
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Function MethylationLevelSimulatorOptions::addOptions()
 // ----------------------------------------------------------------------------
 
@@ -230,6 +247,64 @@ void MethylationLevelSimulatorOptions::print(std::ostream & out) const
         << "  STDDEV CHG\t" << methSigmaCHG << "\n"
         << "  MEDIAN CHH\t" << methMuCHH << "\n"
         << "  STDDEV CHH\t" << methSigmaCHH << "\n";
+}
+
+// ----------------------------------------------------------------------------
+// Function BSSeqOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void BSSeqOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    addSection(parser, "BS-Seq Options");
+
+    addOption(parser, seqan::ArgParseOption("", "enable-bs-seq", "Enable BS-seq simulation."));
+
+    addOption(parser, seqan::ArgParseOption("", "bs-seq-protocol", "Protocol to use for BS-Seq simulation.",
+                                            seqan::ArgParseOption::STRING, "PROTOCOL"));
+    setDefaultValue(parser, "bs-seq-protocol", "directional");
+    setValidValues(parser, "bs-seq-protocol", "directional undirectional");
+
+    addOption(parser, seqan::ArgParseOption("", "bs-seq-conversion-rate", "Conversion rate for unmethylated Cs to "
+                                            "become Ts.", seqan::ArgParseOption::DOUBLE, "RATE"));
+    setMinValue(parser, "bs-seq-conversion-rate", "0");
+    setMaxValue(parser, "bs-seq-conversion-rate", "1");
+    setDefaultValue(parser, "bs-seq-conversion-rate", "0.99");
+}
+
+// ----------------------------------------------------------------------------
+// Function BSSeqOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void BSSeqOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    (void)parser;
+}
+
+// ----------------------------------------------------------------------------
+// Function BSSeqOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void BSSeqOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    getOptionValue(bsSimEnabled, parser, "enable-bs-seq");
+    getOptionValue(bsConversionRate, parser, "bs-seq-conversion-rate");
+    seqan::CharString tmp;
+    getOptionValue(tmp, parser, "bs-seq-protocol");
+    bsProtocol = (tmp == "undirectional") ? UNDIRECTIONAL : DIRECTIONAL;
+}
+
+// ----------------------------------------------------------------------------
+// Function BSSeqOptions::print()
+// ----------------------------------------------------------------------------
+
+void BSSeqOptions::print(std::ostream & out) const
+{
+    out << "BS-SEQ OPTIONS\n"
+        << "  VERBOSITY      \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "  ENABLED\t" << getYesNoStr(bsSimEnabled) << "\n"
+        << "  PROTOCOL\t" << getBSSeqProtocolStr(bsProtocol) << "\n"
+        << "  CONVERSION RATE\t" << bsConversionRate << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -402,6 +477,9 @@ void SequencingOptions::addOptions(seqan::ArgumentParser & parser) const
     addOption(parser, seqan::ArgParseOption("", "read-name-prefix", "Read names will have this prefix.",
                                             seqan::ArgParseOption::STRING, "STR"));
     setDefaultValue(parser, "read-name-prefix", "simulated.");
+
+    // Add options for nested options structs.
+    bsSeqOptions.addOptions(parser);
 }
 
 // ----------------------------------------------------------------------------
@@ -429,6 +507,9 @@ void SequencingOptions::addTextSections(seqan::ArgumentParser & parser) const
     addListItem(parser, "FF2",
                 "Reads are on the same strand but the \"right\" reads are sequenced to the left of the \"left\" reads, "
                 "same as 454 paired: R2 --> --> R1.");
+
+    // Add text sections for nested options structs.
+    bsSeqOptions.addTextSections(parser);
 }
 
 // ----------------------------------------------------------------------------
@@ -467,6 +548,9 @@ void SequencingOptions::getOptionValues(seqan::ArgumentParser const & parser)
 
     getOptionValue(embedReadInfo, parser, "embed-read-info");
     getOptionValue(readNamePrefix, parser, "read-name-prefix");
+
+    // Get option values for nested options.
+    bsSeqOptions.getOptionValues(parser);
 }
 
 // ----------------------------------------------------------------------------
@@ -480,7 +564,11 @@ void SequencingOptions::print(std::ostream & out) const
         << "  SIMULATE MATE PAIRS\t" << getYesNoStr(simulateMatePairs) << "\n"
         << "  MATE ORIENTATION   \t" << getMateOrientationStr(mateOrientation) << "\n"
         << "  SOURCE STRANDS     \t" << getSourceStrandsStr(strands) << "\n"
-        << "  SEQUENCING TECH    \t" << getSequencingTechnologyStr(sequencingTechnology) << "\n";
+        << "  SEQUENCING TECH    \t" << getSequencingTechnologyStr(sequencingTechnology) << "\n"
+        << "\n";
+
+    // Print options for nested options.
+    bsSeqOptions.print(out);
 }
 
 // ----------------------------------------------------------------------------
@@ -993,6 +1081,10 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     setRequired(parser, "num-fragments");
     setMinValue(parser, "num-fragments", "1");
 
+    addOption(parser, seqan::ArgParseOption("", "meth-fasta-in", "FASTA file with methylation levels of the input file.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN"));
+    setValidValues(parser, "meth-fasta-in", "fa fasta");
+
     addOption(parser, seqan::ArgParseOption("o", "out", "Output of single-end/left end reads.",
                                             seqan::ArgParseOption::OUTPUTFILE, "OUT"));
     setRequired(parser, "out");
@@ -1008,6 +1100,7 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
 
     // Add options of the component options.
     matOptions.addOptions(parser);
+    methOptions.addOptions(parser);
     fragSamplerOptions.addOptions(parser);
     seqOptions.addOptions(parser);
     illuminaOptions.addOptions(parser);
@@ -1048,6 +1141,7 @@ void MasonSimulatorOptions::addTextSections(seqan::ArgumentParser & parser) cons
 
     // Add text sections of the component options.
     matOptions.addTextSections(parser);
+    methOptions.addTextSections(parser);
     fragSamplerOptions.addTextSections(parser);
     seqOptions.addTextSections(parser);
     illuminaOptions.addTextSections(parser);
@@ -1072,6 +1166,7 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     getOptionValue(seedSpacing, parser, "seed-spacing");
     getOptionValue(numThreads, parser, "num-threads");
     getOptionValue(numFragments, parser, "num-fragments");
+    getOptionValue(methFastaInFile, parser, "meth-fasta-in");
     getOptionValue(outFileNameLeft, parser, "out");
     getOptionValue(outFileNameRight, parser, "out-right");
     getOptionValue(outFileNameSam, parser, "out-alignment");
@@ -1086,6 +1181,7 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
 
     // Copy in the verbosity flag into the component options.
     matOptions.verbosity = verbosity;
+    methOptions.verbosity = verbosity;
     fragSamplerOptions.verbosity = verbosity;
     seqOptions.verbosity = verbosity;
     illuminaOptions.verbosity = verbosity;
@@ -1115,10 +1211,13 @@ void MasonSimulatorOptions::print(std::ostream & out) const
         << "\n"
         << "NUM THREADS\t" << numThreads << "\n"
         << "\n"
+        << "METHYLATION FASTA IN\t" << methFastaInFile << "\n"
         << "OUTPUT FILE LEFT\t" << outFileNameLeft << "\n"
         << "OUTPUT FILE RIGHT\t" << outFileNameRight << "\n"
         << "\n";
     matOptions.print(out);
+    out << "\n";
+    methOptions.print(out);
     out << "\n";
     fragSamplerOptions.print(out);
     out << "\n";
@@ -1350,7 +1449,7 @@ void MasonFragmentSequencingOptions::print(std::ostream & out) const
 }
 
 // ----------------------------------------------------------------------------
-// Function MasonSimulatorOptions::addOptions()
+// Function MasonMethylationOptions::addOptions()
 // ----------------------------------------------------------------------------
 
 void MasonMethylationOptions::addOptions(seqan::ArgumentParser & parser) const
