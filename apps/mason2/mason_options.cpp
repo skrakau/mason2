@@ -1172,6 +1172,7 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     getOptionValue(outFileNameSam, parser, "out-alignment");
 
     // Get options for the other components that we use.
+    methOptions.getOptionValues(parser);
     matOptions.getOptionValues(parser);
     fragSamplerOptions.getOptionValues(parser);
     seqOptions.getOptionValues(parser);
@@ -1191,6 +1192,7 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     // Configure simulation of pairs and mates depending on output files.
     seqOptions.simulateQualities = (endsWith(outFileNameLeft, ".fastq") || endsWith(outFileNameLeft, ".fq"));
     seqOptions.simulateMatePairs = !empty(outFileNameRight);
+    methOptions.simulateMethylationLevels = !empty(methFastaInFile);
 }
 
 // ----------------------------------------------------------------------------

@@ -76,7 +76,7 @@ struct MethylationLevels
     }
 
     // Translate character in forward/reverse to level (0..80).
-    inline char charToLevel(char c)
+    inline char charToLevel(char c) const
     {
         if (c < '>')  // '>' cannot be used as value
             return c - 33;
@@ -85,7 +85,7 @@ struct MethylationLevels
     }
 
     // Translate level (0..80) to character in forward/reverse.
-    inline char levelToChar(char c)
+    inline char levelToChar(char c) const
     {
         if (c + '!' < '>')
             return c + 33;
@@ -94,7 +94,7 @@ struct MethylationLevels
     }
 
     // Returns methylation level for forward strand at position i.
-    inline float levelF(unsigned i)
+    inline float levelF(unsigned i) const
     {
         return (charToLevel(forward[i]) / 80.0) / 0.0125;
     }
@@ -111,7 +111,7 @@ struct MethylationLevels
     }
 
     // Returns methylation level for reverse strand at position i.
-    inline float levelR(unsigned i)
+    inline float levelR(unsigned i) const
     {
         return (charToLevel(reverse[i]) / 80.0) / 0.0125;
     }
@@ -127,6 +127,13 @@ struct MethylationLevels
         reverse[i] = std::max(reverse[i], c);
     }
 };
+
+inline
+void swap(MethylationLevels & lhs, MethylationLevels & rhs)
+{
+    swap(lhs.forward, rhs.forward);
+    swap(lhs.reverse, rhs.reverse);
+}
 
 // --------------------------------------------------------------------------
 // Class MethylationLevelSimulator

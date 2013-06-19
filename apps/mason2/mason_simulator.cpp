@@ -139,7 +139,7 @@ public:
             TFragment frag(seq, fragments[i / 2].beginPos, fragments[i / 2].endPos);
             seqSimulator->simulatePairedEnd(seqs[i], quals[i], infos[i],
                                             seqs[i + 1], quals[i + 1], infos[i + 1],
-                                            frag);
+                                            frag, methLevels);
             infos[i].rID = infos[i + 1].rID = rID;
             infos[i].hID = infos[i + 1].hID = hID;
             _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
@@ -229,7 +229,7 @@ public:
         for (unsigned i = 0; i < fragmentIds.size(); ++i)
         {
             TFragment frag(seq, fragments[i].beginPos, fragments[i].endPos);
-            seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag);
+            seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag, methLevels);
             _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
             if (buildAlignments)
             {
@@ -380,8 +380,8 @@ public:
         int contigFragmentCount = 0;  // number of reads on the contig
         // Note that all shared variables are correctly synchronized by implicit flushes at the critical sections below.
         MethylationLevels levels;
-        while ((options.methOptions.simulateMethylationLevels && vcfMat.materializeNext(contigSeq, levels, rID, hID)) ||
-               (!options.methOptions.simulateMethylationLevels && vcfMat.materializeNext(contigSeq, rID, hID)))
+        while ((options.seqOptions.bsSeqOptions.bsSimEnabled && vcfMat.materializeNext(contigSeq, levels, rID, hID)) ||
+               (!options.seqOptions.bsSeqOptions.bsSimEnabled && vcfMat.materializeNext(contigSeq, rID, hID)))
         {
             std::cerr << "  " << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
             contigFragmentCount = 0;

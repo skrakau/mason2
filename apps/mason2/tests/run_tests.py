@@ -392,6 +392,57 @@ def main(source_base, binary_base):
                  ])
     conf_list.append(conf)
 
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '--meth-fasta-in', ph.inFile('random_meth1.fasta'),
+              '--methylation-levels',
+              '--enable-bs-seq',
+              '-o', ph.outFile('simulator.left5.fq'),
+              '-or', ph.outFile('simulator.right5.fq'),
+              ],
+        redir_stdout=ph.outFile('simulator.out5.stdout'),
+        redir_stderr=ph.outFile('simulator.out5.stderr'),
+        to_diff=[(ph.inFile('simulator.left5.fq'),
+                  ph.outFile('simulator.left5.fq')),
+                 (ph.inFile('simulator.right5.fq'),
+                  ph.outFile('simulator.right5.fq')),
+                 (ph.inFile('simulator.out5.stdout'),
+                  ph.outFile('simulator.out5.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out5.stderr'),
+                  ph.outFile('simulator.out5.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
+    conf = app_tests.TestConf(
+        program=path_to_simulator,
+        args=['-n', '1000',
+              '-ir', ph.inFile('random.fasta'),
+              '-iv', ph.inFile('random_var1.vcf'),
+              '--meth-fasta-in', ph.inFile('random_meth1.fasta'),
+              '--methylation-levels',
+              '--enable-bs-seq',
+              '-o', ph.outFile('simulator.left6.fq'),
+              '-or', ph.outFile('simulator.right6.fq'),
+              ],
+        redir_stdout=ph.outFile('simulator.out6.stdout'),
+        redir_stderr=ph.outFile('simulator.out6.stderr'),
+        to_diff=[(ph.inFile('simulator.left6.fq'),
+                  ph.outFile('simulator.left6.fq')),
+                 (ph.inFile('simulator.right6.fq'),
+                  ph.outFile('simulator.right6.fq')),
+                 (ph.inFile('simulator.out6.stdout'),
+                  ph.outFile('simulator.out6.stdout'),
+                  transforms),
+                 (ph.inFile('simulator.out6.stderr'),
+                  ph.outFile('simulator.out6.stderr'),
+                  transforms),
+                 ])
+    conf_list.append(conf)
+
     # Execute the tests.
     failures = 0
     for conf in conf_list:

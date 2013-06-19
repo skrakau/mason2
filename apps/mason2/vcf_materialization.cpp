@@ -234,7 +234,10 @@ bool VcfMaterializer::_materializeNext(seqan::Dna5String & seq, MethylationLevel
         if (readSequence(seq, faiIndex, currRID) != 0)
             throw MasonIOException("Could not load reference sequence.");
         if (levels && !empty(methFastaFileName))
+        {
             _loadLevels(currRID);
+            swap(*levels, currentLevels);
+        }
         return true;
     }
 

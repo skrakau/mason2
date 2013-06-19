@@ -46,6 +46,7 @@
 #include <seqan/random.h>
 
 #include "mason_options.h"
+#include "methylation_levels.h"
 
 // ============================================================================
 // Forwards
@@ -145,6 +146,9 @@ public:
     // Overall sequencing options.
     SequencingOptions const * seqOptions;
 
+    // Buffer for the materialization of BS-seq treated fragments.
+    seqan::Dna5String methFrag;
+
     SequencingSimulator(TRng & rng, SequencingOptions const & _options) : rng(rng), seqOptions(&_options)
     {}
 
@@ -154,13 +158,19 @@ public:
     virtual unsigned readLength() = 0;
 
     // Simulate paired-end sequencing from a fragment.
+    //
+    // If BS-seq is enabled in seqOptions->bsSeqOptions then levels must be != 0.
     void simulatePairedEnd(TRead & seqL, TQualities & qualsL, SequencingSimulationInfo & infoL,
                            TRead & seqR, TQualities & qualsR, SequencingSimulationInfo & infoR,
-                           TFragment const & frag);
+                           TFragment const & frag,
+                           MethylationLevels const * levels = 0);
 
     // Simulate single-end sequencing from a fragment.
+    //
+    // If BS-seq is enabled in seqOptions->bsSeqOptions then levels must be != 0.
     void simulateSingleEnd(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
-                           TFragment const & frag);
+                           TFragment const & frag,
+                           MethylationLevels const * levels = 0);
 
     // Actually simulate read and qualities from fragment and direction forward/reverse strand.
     //
@@ -171,6 +181,26 @@ public:
     // dir -- whether this is the left or right read
     virtual void simulateRead(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
                               TFragment const & frag, Direction dir, Strand strand) = 0;
+
+private:
+    // Simulate BS-seq treatment on forward/reverse strand of frag with the given methylation levels.
+    //
+    // The result is a DNA string with the translations.
+    void _simulateBSTreatment(seqan::Dna5String & methFragment,
+                              TFragment const & frag,
+                              MethylationLevels const & levels,
+                              bool reverse);
+
+    // Implementation of the single-end and paired-end sequencing.  The functions without an underscore forward here.
+    void _simulatePairedEnd(TRead & seqL, TQualities & qualsL, SequencingSimulationInfo & infoL,
+                            TRead & seqR, TQualities & qualsR, SequencingSimulationInfo & infoR,
+                            TFragment const & frag, bool isForward);
+
+    // Simulate single-end sequencing from a fragment.
+    //
+    // If BS-seq is enabled in seqOptions->bsSeqOptions then levels must be != 0.
+    void _simulateSingleEnd(TRead & seq, TQualities & quals, SequencingSimulationInfo & info,
+                            TFragment const & frag, bool isForward);
 };
 
 inline SequencingSimulator::~SequencingSimulator() {}
