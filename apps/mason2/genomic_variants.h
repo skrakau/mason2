@@ -282,11 +282,21 @@ struct GenomicInterval
     Kind kind;
 
     explicit
-    GenomicInterval(int svBeginPos = -1, int svEndPos = -1, int smallVarBeginPos = -1, int smallVarEndPos = -1,
+    GenomicInterval(int svBeginPos = -1, int svEndPos = -1,
+                    int smallVarBeginPos = -1, int smallVarEndPos = -1,
                     char strand = '.', Kind kind = NORMAL) :
             svBeginPos(svBeginPos), svEndPos(svEndPos), smallVarBeginPos(smallVarBeginPos),
             smallVarEndPos(smallVarEndPos), strand(strand), kind(kind)
     {}
+
+    bool operator==(GenomicInterval const & other) const
+    {
+        return (svBeginPos == other.svBeginPos) &&
+                (svEndPos == other.svEndPos) &&
+                (smallVarBeginPos == other.smallVarBeginPos) &&
+                (smallVarEndPos == other.smallVarEndPos) &&
+                (strand == other.strand);
+    }
 };
 
 // --------------------------------------------------------------------------
@@ -307,9 +317,11 @@ public:
     TJournalEntries smallVariantJournal;
     // The mapping from the genome with variants to
     TIntervalTree svIntervalTree;
+    // The breakpoints on the sequence with variants.
+    std::set<int> svBreakpoints;
 
     // Returns true if the interval on the sequence with structural variants overlaps with a breakpoint.
-    bool overlapsWithVariant(int svBeginPos, int svEndPos) const;
+    bool overlapsWithBreakpoint(int svBeginPos, int svEndPos) const;
 
     // Returns the GenomicInterval on the sequence with small variants for the given position on the sequence with SVs.
     GenomicInterval getGenomicInterval(int svPos) const;

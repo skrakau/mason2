@@ -535,11 +535,10 @@ int VariantMaterializer::_materializeLargeVariants(
 // Function PositionMap::overlapsWithVariant()
 // --------------------------------------------------------------------------
 
-bool PositionMap::overlapsWithVariant(int svBeginPos, int svEndPos) const
+bool PositionMap::overlapsWithBreakpoint(int svBeginPos, int svEndPos) const
 {
-    seqan::String<GenomicInterval> intervals;
-    findIntervals(svIntervalTree, svBeginPos, svEndPos, intervals);
-    return !empty(intervals);
+    std::set<int>::const_iterator it = svBreakpoints.upper_bound(svBeginPos);
+    return (it != svBreakpoints.end() && *it < svEndPos);
 }
 
 // --------------------------------------------------------------------------
@@ -560,7 +559,7 @@ GenomicInterval PositionMap::getGenomicInterval(int svPos) const
 
 std::pair<int, int> PositionMap::toSmallVarInterval(int svBeginPos, int svEndPos) const
 {
-    SEQAN_ASSERT(!overlapsWithVariant(svBeginPos, svEndPos));
+    SEQAN_ASSERT(!overlapsWithBreakpoint(svBeginPos, svEndPos));
     GenomicInterval gi = getGenomicInterval(svBeginPos);
     if (gi.kind == GenomicInterval::INSERTED)
     {
