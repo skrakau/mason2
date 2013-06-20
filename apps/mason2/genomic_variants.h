@@ -44,6 +44,8 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 #define SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 
+#include <seqan/misc/misc_interval_tree.h>
+
 #include "methylation_levels.h"
 
 // ============================================================================
@@ -247,6 +249,90 @@ struct Variants
 };
 
 // --------------------------------------------------------------------------
+// Class GenomicInterval
+// --------------------------------------------------------------------------
+
+// We annotate intervals (in an interval tree) from the genome with structural variants with intervals in the sequence
+// with small variants.  These intervals are stored as GenomicInterval objects.
+
+struct GenomicInterval
+{
+    // The kind of the interval.  Can be inserted, inverted, duplicated, or anything else (normal = translocation,
+    // untouched.
+    enum Kind
+    {
+        NORMAL,
+        INSERTED,
+        INVERTED,
+        DUPLICATED
+    };
+
+    // Begin and end position on sequence with SVs.
+    int svBeginPos;
+    int svEndPos;
+
+    // Begin and end position on sequence without SVs.
+    int smallVarBeginPos;
+    int smallVarEndPos;
+
+    // The strand of the interval '+'/'-'.
+    char strand;
+
+    // The kind of the interval.
+    Kind kind;
+
+    explicit
+    GenomicInterval(int svBeginPos = -1, int svEndPos = -1, int smallVarBeginPos = -1, int smallVarEndPos = -1,
+                    char strand = '.', Kind kind = NORMAL) :
+            svBeginPos(svBeginPos), svEndPos(svEndPos), smallVarBeginPos(smallVarBeginPos),
+            smallVarEndPos(smallVarEndPos), strand(strand), kind(kind)
+    {}
+};
+
+// --------------------------------------------------------------------------
+// Class PositionMap
+// --------------------------------------------------------------------------
+
+// Used for translating between the sequence with SVs, small variants, and original sequence.
+
+class PositionMap
+{
+public:
+    typedef int TValue;
+    typedef GenomicInterval TCargo;
+    typedef seqan::IntervalAndCargo<TValue, TCargo> TInterval;
+    typedef seqan::IntervalTree<TValue, TCargo> TIntervalTree;
+
+    // The journal to use for translating between the original sequence and large variants.
+    TJournalEntries smallVariantJournal;
+    // The mapping from the genome with variants to
+    TIntervalTree svIntervalTree;
+
+    // Returns true if the interval on the sequence with structural variants overlaps with a breakpoint.
+    bool overlapsWithVariant(int svBeginPos, int svEndPos) const;
+
+    // Returns the GenomicInterval on the sequence with small variants for the given position on the sequence with SVs.
+    GenomicInterval getGenomicInterval(int svPos) const;
+
+    // Translates an interval on the sequence with small variants to an interval on the original sequence.  The
+    // translation is done in such a way that when the begin position is in an insertion, it is projected to the right
+    // of the gap and if the end position is in an insertion, it is projected to the left of the gap.
+    std::pair<int, int> toOriginalInterval(int smallVarBeginPos, int smallVarEndPos) const;
+
+    // Translates an interval on the sequence with SVs to an interval on the sequence with small variants.
+    //
+    // Returns (-1, -1) if the interval lies in an insertion.
+    //
+    // Returns (a, b), a > b if on the reverse strand
+    //
+    // The interval must not overlap with a breakpoitn.
+    std::pair<int, int> toSmallVarInterval(int svBeginPos, int svEndPos) const;
+
+    // Reset the PositionMap with the length of the original sequence.
+    void reinit(unsigned contigLength);
+};
+
+// --------------------------------------------------------------------------
 // Class VariantMaterializer
 // --------------------------------------------------------------------------
 
@@ -266,6 +352,7 @@ public:
     Variants const * variants;
     // Options for the methylation level simulator.  Methylation simulation is required for fixing methylation levels.
     MethylationLevelSimulatorOptions const * methSimOptions;
+    // When materializing the variants, 
 
     // Verbosity.
     int verbosity;

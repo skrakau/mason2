@@ -530,3 +530,80 @@ int VariantMaterializer::_materializeLargeVariants(
         
     return 0;
 }
+
+// --------------------------------------------------------------------------
+// Function PositionMap::overlapsWithVariant()
+// --------------------------------------------------------------------------
+
+bool PositionMap::overlapsWithVariant(int svBeginPos, int svEndPos) const
+{
+    seqan::String<GenomicInterval> intervals;
+    findIntervals(svIntervalTree, svBeginPos, svEndPos, intervals);
+    return !empty(intervals);
+}
+
+// --------------------------------------------------------------------------
+// Function PositionMap::getGenomicInterval()
+// --------------------------------------------------------------------------
+
+GenomicInterval PositionMap::getGenomicInterval(int svPos) const
+{
+    seqan::String<GenomicInterval> intervals;
+    findIntervals(svIntervalTree, svPos, intervals);
+    SEQAN_ASSERT_EQ(length(intervals), 1u);
+    return intervals[0];
+}
+
+// --------------------------------------------------------------------------
+// Function PositionMap::toSmallVarInterval()
+// --------------------------------------------------------------------------
+
+std::pair<int, int> PositionMap::toSmallVarInterval(int svBeginPos, int svEndPos) const
+{
+    SEQAN_ASSERT(!overlapsWithVariant(svBeginPos, svEndPos));
+    GenomicInterval gi = getGenomicInterval(svBeginPos);
+    if (gi.kind == GenomicInterval::INSERTED)
+    {
+        // novel sequence, cannot be projected
+        return std::make_pair(-1, -1);
+    }
+    if (gi.kind != GenomicInterval::INVERTED)
+    {
+        // forward
+        return std::make_pair(gi.smallVarBeginPos + (svBeginPos - gi.svBeginPos),
+                              gi.smallVarBeginPos + (svEndPos - gi.svBeginPos));
+    }
+    else
+    {
+        // reverse
+        return std::make_pair(gi.smallVarBeginPos + (gi.svEndPos - svBeginPos),
+                              gi.smallVarBeginPos + (gi.svEndPos - svEndPos));
+    }
+
+    return std::make_pair(-1, -1);  // cannot reach here
+}
+
+// --------------------------------------------------------------------------
+// Function PositionMap::toOriginalInterval()
+// --------------------------------------------------------------------------
+
+std::pair<int, int> PositionMap::toOriginalInterval(int smallVarBeginPos, int smallVarEndPos) const
+{
+    // TODO(holtgrew): Project to the left of gaps as documented.
+    int refBeginPos = hostToVirtualPosition(smallVariantJournal, smallVarBeginPos);
+    int refEndPos = hostToVirtualPosition(smallVariantJournal, smallVarEndPos);
+    return std::make_pair(refBeginPos, refEndPos);
+}
+
+// --------------------------------------------------------------------------
+// Function PositionMap::reinit()
+// --------------------------------------------------------------------------
+
+void PositionMap::reinit(unsigned contigLength)
+{
+    // Reset the journal.
+    seqan::reinit(smallVariantJournal, contigLength);
+    // Reset the interval tree.
+    // TODO(holtgrew): Better API support for IntervalTree?
+    svIntervalTree = TIntervalTree();
+}
