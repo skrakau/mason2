@@ -588,6 +588,7 @@ std::pair<int, int> PositionMap::toSmallVarInterval(int svBeginPos, int svEndPos
 
 std::pair<int, int> PositionMap::toOriginalInterval(int smallVarBeginPos, int smallVarEndPos) const
 {
+    // TODO(holtgrew): We need to "reverse" the journal since there might be ambiguities in virtual to host position.
     // TODO(holtgrew): Project to the left of gaps as documented.
     int refBeginPos = hostToVirtualPosition(smallVariantJournal, smallVarBeginPos);
     int refEndPos = hostToVirtualPosition(smallVariantJournal, smallVarEndPos);

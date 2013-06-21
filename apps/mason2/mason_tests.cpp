@@ -257,6 +257,27 @@ SEQAN_DEFINE_TEST(mason_tests_position_map_translocation)
     SEQAN_ASSERT_EQ(i4.second, 1000);
 }
 
+SEQAN_DEFINE_TEST(mason_tests_position_map_to_original_interval)
+{
+    PositionMap positionMap;
+    positionMap.reinit(100);
+
+    // Create the following situation in the journal.
+    //
+    //     REF XXXXX--XXXXX--XXXXX
+    // SMALVAR XX--XXXX--XXXXX--XX
+    recordErase(positioMap.smallVariantJournal, 11, 13);
+    recordInsertion(positioMap.smallVariantJournal, 10, 12);
+    recordErase(positioMap.smallVariantJournal, 6, 8);
+    recordInsertion(positioMap.smallVariantJournal, 5, 7);
+    recordErase(positioMap.smallVariantJournal, 2, 4);
+
+    // Check toOriginalInterval.
+    std::pair<int, int> i1 = positionMap.toOriginalInterval(1, 2);
+    SEQAN_ASSERT_EQ(i1.first, 1);
+    SEQAN_ASSERT_EQ(i1.second, 4);
+}
+
 SEQAN_BEGIN_TESTSUITE(mason_tests)
 {
     SEQAN_CALL_TEST(mason_tests_append_orientation_elementary_operations);
@@ -265,5 +286,6 @@ SEQAN_BEGIN_TESTSUITE(mason_tests)
 
     SEQAN_CALL_TEST(mason_tests_position_map_inversion);
     SEQAN_CALL_TEST(mason_tests_position_map_translocation);
+    SEQAN_CALL_TEST(mason_tests_position_map_to_original_interval);
 }
 SEQAN_END_TESTSUITE
