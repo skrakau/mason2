@@ -145,82 +145,97 @@ public:
             _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
             _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
             if (buildAlignments)
-            {
-                alignmentRecords[i].flag = 0;
-                alignmentRecords[i + 1].flag = 0;
-
-                if (!infos[i].isForward)
-                {
-                    alignmentRecords[i].flag |= seqan::BAM_FLAG_RC;
-                    alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_NEXT_RC;
-                }
-                if (!infos[i + 1].isForward)
-                {
-                    alignmentRecords[i].flag |= seqan::BAM_FLAG_NEXT_RC;
-                    alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_RC;
-                }
-
-                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
-                // compute the whole record and reference coordinates when writing out.
-                _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
-                alignmentRecords[i].flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_FIRST;
-                alignmentRecords[i].rID = rID;
-                alignmentRecords[i].beginPos = infos[i].beginPos;
-                if (!infos[i].isForward)
-                {
-                    reverseComplement(seqs[i]);
-                    reverse(quals[i]);
-                    reverse(infos[i].cigar);
-                }
-                alignmentRecords[i].cigar = infos[i].cigar;
-                alignmentRecords[i].seq = seqs[i];
-                alignmentRecords[i].qual = quals[i];
-                if (!infos[i].isForward)
-                {
-                    reverseComplement(seqs[i]);
-                    reverse(quals[i]);
-                    reverse(infos[i].cigar);
-                }
-
-                _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 1, infos[i + 1], true);
-                alignmentRecords[i + 1].flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
-                        seqan::BAM_FLAG_LAST;
-                alignmentRecords[i + 1].rID = rID;
-                alignmentRecords[i + 1].beginPos = infos[i + 1].beginPos;
-                if (!infos[i + 1].isForward)
-                {
-                    reverseComplement(seqs[i + 1]);
-                    reverse(quals[i + 1]);
-                    reverse(infos[i + 1].cigar);
-                }
-                alignmentRecords[i + 1].cigar = infos[i + 1].cigar;
-                alignmentRecords[i + 1].seq = seqs[i + 1];
-                alignmentRecords[i + 1].qual = quals[i + 1];
-                if (!infos[i + 1].isForward)
-                {
-                    reverseComplement(seqs[i + 1]);
-                    reverse(quals[i + 1]);
-                    reverse(infos[i + 1].cigar);
-                }
-
-                alignmentRecords[i].rNextId = alignmentRecords[i + 1].rID;
-                alignmentRecords[i + 1].rNextId = alignmentRecords[i].rID;
-                alignmentRecords[i].pNext = alignmentRecords[i + 1].beginPos;
-                alignmentRecords[i + 1].pNext = alignmentRecords[i].beginPos;
-                if (alignmentRecords[i].beginPos < alignmentRecords[i + 1].beginPos)
-                {
-                    alignmentRecords[i].tLen = alignmentRecords[i + 1].beginPos + (int)length(seqs[i]) - alignmentRecords[i].beginPos;
-                    alignmentRecords[i + 1].tLen = -alignmentRecords[i].tLen;
-                }
-                else
-                {
-                    alignmentRecords[i + 1].tLen = alignmentRecords[i].beginPos + (int)length(seqs[i + 1]) - alignmentRecords[i + 1].beginPos;
-                    alignmentRecords[i].tLen = -alignmentRecords[i + 1].tLen;
-                }
-            }
+                _buildPairedEndAlignment(alignmentRecords[i], alignmentRecords[i + 1],
+                                         infos[i], infos[i + 1], seqs[i], seqs[i + 1],
+                                         ss, quals[i], quals[i + 1], rID, fragmentIds[i / 2]);
         }
     }
+
+    void _buildPairedEndAlignment(seqan::BamAlignmentRecord & recordL,
+                                  seqan::BamAlignmentRecord & recordR,
+                                  SequencingSimulationInfo & infoL,
+                                  SequencingSimulationInfo & infoR,
+                                  seqan::Dna5String & seqL,  // state restored after call
+                                  seqan::Dna5String & seqR,  // state restored after call
+                                  std::stringstream & ss,  // state
+                                  seqan::CharString const & qualL,
+                                  seqan::CharString const & qualR,
+                                  int rID, int fID)
+    {
+        recordL.flag = 0;
+        recordR.flag = 0;
+
+        if (!infoL.isForward)
+        {
+            recordL.flag |= seqan::BAM_FLAG_RC;
+            recordR.flag |= seqan::BAM_FLAG_NEXT_RC;
+        }
+        if (!infoR.isForward)
+        {
+            recordL.flag |= seqan::BAM_FLAG_NEXT_RC;
+            recordR.flag |= seqan::BAM_FLAG_RC;
+        }
+
+        // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
+        // compute the whole record and reference coordinates when writing out.
+        _setId(recordL.qName, ss, fID, 1, infoL, true);
+        recordL.flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                seqan::BAM_FLAG_FIRST;
+        recordL.rID = rID;
+        recordL.beginPos = infoL.beginPos;
+        if (!infoL.isForward)
+        {
+            reverseComplement(seqL);
+            reverse(qualL);
+            reverse(infoL.cigar);
+        }
+        recordL.cigar = infoL.cigar;
+        recordL.seq = seqL;
+        recordL.qual = qualL;
+        if (!infoL.isForward)
+        {
+            reverseComplement(seqL);
+            reverse(qualL);
+            reverse(infoL.cigar);
+        }
+
+        _setId(recordR.qName, ss, fID, 1, infoR, true);
+        recordR.flag |= seqan::BAM_FLAG_ALL_PROPER | seqan::BAM_FLAG_MULTIPLE |
+                seqan::BAM_FLAG_LAST;
+        recordR.rID = rID;
+        recordR.beginPos = infoR.beginPos;
+        if (!infoR.isForward)
+        {
+            reverseComplement(seqR);
+            reverse(qualR);
+            reverse(infoR.cigar);
+        }
+        recordR.cigar = infoR.cigar;
+        recordR.seq = seqR;
+        recordR.qual = qualR;
+        if (!infoR.isForward)
+        {
+            reverseComplement(seqR);
+            reverse(qualR);
+            reverse(infoR.cigar);
+        }
+
+        recordL.rNextId = recordR.rID;
+        recordR.rNextId = recordL.rID;
+        recordL.pNext = recordR.beginPos;
+        recordR.pNext = recordL.beginPos;
+        if (recordL.beginPos < recordR.beginPos)
+        {
+            recordL.tLen = recordR.beginPos + (int)length(seqL) - recordL.beginPos;
+            recordR.tLen = -recordL.tLen;
+        }
+        else
+        {
+            recordR.tLen = recordL.beginPos + (int)length(seqR) - recordR.beginPos;
+            recordL.tLen = -recordR.tLen;
+        }
+    }
+
 
     void _simulateSingleEnd(seqan::Dna5String const & seq, int rID, int hID)
     {
@@ -232,32 +247,41 @@ public:
             seqSimulator->simulateSingleEnd(seqs[i], quals[i], infos[i], frag, methLevels);
             _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
             if (buildAlignments)
-            {
-                // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will
-                // compute the whole record and reference coordinates when writing out.
-                infos[i].rID = rID;
-                infos[i].hID = hID;
-                _setId(alignmentRecords[i].qName, ss, fragmentIds[i], 1, infos[i], true);
-                alignmentRecords[i].flag = 0;
-                alignmentRecords[i].rID = rID;
-                alignmentRecords[i].beginPos = infos[i].beginPos;
-                if (!infos[i].isForward)
-                {
-                    alignmentRecords[i].flag = seqan::BAM_FLAG_RC;
-                    reverseComplement(seqs[i]);
-                    reverse(quals[i]);
-                    reverse(infos[i].cigar);
-                }
-                alignmentRecords[i].cigar = infos[i].cigar;
-                alignmentRecords[i].seq = seqs[i];
-                alignmentRecords[i].qual = quals[i];
-                if (!infos[i].isForward)
-                {
-                    reverseComplement(seqs[i]);
-                    reverse(quals[i]);
-                    reverse(infos[i].cigar);
-                }
-            }
+                _buildSingleEndAlignment(alignmentRecords[i], infos[i], seqs[i], ss, quals[i],
+                                         rID, hID, fragmentIds[i]);
+        }
+    }
+
+    // Build alignment records, filling qName, flag, rID, and pos only to save disk space.  We will compute the whole
+    // record and reference coordinates when writing out.
+    void _buildSingleEndAlignment(seqan::BamAlignmentRecord & record,
+                                  SequencingSimulationInfo & info,
+                                  seqan::Dna5String & seq,  // state restored after call
+                                  std::stringstream & ss,  // state
+                                  seqan::CharString const & qual,
+                                  int rID, int hID, int fID)
+    {
+        info.rID = rID;
+        info.hID = hID;
+        _setId(record.qName, ss, fID, 1, info, true);
+        record.flag = 0;
+        record.rID = rID;
+        record.beginPos = info.beginPos;
+        if (!info.isForward)
+        {
+            record.flag = seqan::BAM_FLAG_RC;
+            reverseComplement(seq);
+            reverse(qual);
+            reverse(info.cigar);
+        }
+        record.cigar = info.cigar;
+        record.seq = seq;
+        record.qual = qual;
+        if (!info.isForward)
+        {
+            reverseComplement(seq);
+            reverse(qual);
+            reverse(info.cigar);
         }
     }
 
