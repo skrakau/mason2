@@ -259,23 +259,59 @@ SEQAN_DEFINE_TEST(mason_tests_position_map_translocation)
 
 SEQAN_DEFINE_TEST(mason_tests_position_map_to_original_interval)
 {
-    PositionMap positionMap;
-    positionMap.reinit(100);
+    // Deletions in the variant / insertions in the reference.
+    {
+        PositionMap positionMap;
+        positionMap.reinit(100);
 
-    // Create the following situation in the journal.
-    //
-    //     REF XXXXX--XXXXX--XXXXX
-    // SMALVAR XX--XXXX--XXXXX--XX
-    recordErase(positioMap.smallVariantJournal, 11, 13);
-    recordInsertion(positioMap.smallVariantJournal, 10, 12);
-    recordErase(positioMap.smallVariantJournal, 6, 8);
-    recordInsertion(positioMap.smallVariantJournal, 5, 7);
-    recordErase(positioMap.smallVariantJournal, 2, 4);
+        // Create the following situation in the journal.
+        //
+        //                    1        2
+        //          0         0        0
+        //          :    .    :    .   :
+        // SMALLVAR XX--XXXX--XXXXX
+        //      REF XXXXXXXXXXXXXXX
+        recordInsertion(positionMap.smallVariantJournal,  2, 0, 2);
+        recordInsertion(positionMap.smallVariantJournal,  8, 0, 2);
 
-    // Check toOriginalInterval.
-    std::pair<int, int> i1 = positionMap.toOriginalInterval(1, 2);
-    SEQAN_ASSERT_EQ(i1.first, 1);
-    SEQAN_ASSERT_EQ(i1.second, 4);
+        // Check toOriginalInterval.
+        std::pair<int, int> i1 = positionMap.toOriginalInterval(2, 3);
+        SEQAN_ASSERT_EQ(i1.first, 4);
+        SEQAN_ASSERT_EQ(i1.second, 5);
+        std::pair<int, int> i2 = positionMap.toOriginalInterval(1, 3);
+        SEQAN_ASSERT_EQ(i2.first, 1);
+        SEQAN_ASSERT_EQ(i2.second, 5);
+        std::pair<int, int> i3 = positionMap.toOriginalInterval(3, 7);
+        SEQAN_ASSERT_EQ(i3.first, 5);
+        SEQAN_ASSERT_EQ(i3.second, 11);
+    }
+
+    // Insertions in the variant / deletions in the reference.
+    {
+        PositionMap positionMap;
+        positionMap.reinit(100);
+
+        // Create the following situation in the journal.
+        //
+        //                    1        2
+        //          0         0        0
+        //          :    .    :    .   :
+        // SMALLVAR XXXXXXXXXXXXXXX
+        //      REF XX--XXXX--XXXXX
+        recordErase(positionMap.smallVariantJournal,  8, 10);
+        recordErase(positionMap.smallVariantJournal,  2, 4);
+
+        // Check toOriginalInterval.
+        std::pair<int, int> i1 = positionMap.toOriginalInterval(1, 3);
+        SEQAN_ASSERT_EQ(i1.first, 1);
+        SEQAN_ASSERT_EQ(i1.second, 2);
+        std::pair<int, int> i2 = positionMap.toOriginalInterval(5, 6);
+        SEQAN_ASSERT_EQ(i2.first, 3);
+        SEQAN_ASSERT_EQ(i2.second, 4);
+        std::pair<int, int> i3 = positionMap.toOriginalInterval(3, 9);
+        SEQAN_ASSERT_EQ(i3.first, 2);
+        SEQAN_ASSERT_EQ(i3.second, 6);
+    }
 }
 
 SEQAN_BEGIN_TESTSUITE(mason_tests)

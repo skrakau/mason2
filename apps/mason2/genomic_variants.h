@@ -313,7 +313,7 @@ public:
     typedef seqan::IntervalAndCargo<TValue, TCargo> TInterval;
     typedef seqan::IntervalTree<TValue, TCargo> TIntervalTree;
 
-    // The journal to use for translating between the original sequence and large variants.
+    // The journal to use for translating from the small variants sequence to the original sequence.
     TJournalEntries smallVariantJournal;
     // The mapping from the genome with variants to
     TIntervalTree svIntervalTree;
