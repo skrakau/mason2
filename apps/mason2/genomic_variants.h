@@ -44,6 +44,7 @@
 #ifndef SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 #define SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 
+#include <seqan/align.h>
 #include <seqan/misc/misc_interval_tree.h>
 
 #include "methylation_levels.h"
@@ -313,8 +314,11 @@ public:
     typedef seqan::IntervalAndCargo<TValue, TCargo> TInterval;
     typedef seqan::IntervalTree<TValue, TCargo> TIntervalTree;
 
-    // The journal to use for translating from the small variants sequence to the original sequence.
-    TJournalEntries smallVariantJournal;
+    typedef seqan::String<seqan::GapAnchor<int> > TGapAnchors;
+    typedef seqan::Gaps<seqan::Nothing, seqan::AnchorGaps<TGapAnchors> > TGaps;
+
+    // Gap anchors for gaps for translating between original and small variant coordinate system.
+    TGapAnchors refGapAnchors, smallVarGapAnchors;
     // The mapping from the genome with variants to
     TIntervalTree svIntervalTree;
     // The breakpoints on the sequence with variants.
@@ -341,7 +345,7 @@ public:
     std::pair<int, int> toSmallVarInterval(int svBeginPos, int svEndPos) const;
 
     // Reset the PositionMap with the length of the original sequence.
-    void reinit(unsigned contigLength);
+    void reinit(TJournalEntries const & journal);
 };
 
 // --------------------------------------------------------------------------

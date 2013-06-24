@@ -588,22 +588,100 @@ std::pair<int, int> PositionMap::toSmallVarInterval(int svBeginPos, int svEndPos
 
 std::pair<int, int> PositionMap::toOriginalInterval(int smallVarBeginPos, int smallVarEndPos) const
 {
-    // TODO(holtgrew): We need to "reverse" the journal since there might be ambiguities in virtual to host position.
-    // TODO(holtgrew): Project to the left of gaps as documented.
-    int refBeginPos = hostToVirtualPosition(smallVariantJournal, smallVarBeginPos);
-    int refEndPos = hostToVirtualPosition(smallVariantJournal, smallVarEndPos);
-    return std::make_pair(refBeginPos, refEndPos);
+    // TODO(holtgrew): Project to the left at the end.
+
+    // Get anchor gaps objects from anchors.
+    TGaps refGaps(seqan::Nothing(), refGapAnchors);
+    TGaps smallVarGaps(seqan::Nothing(), smallVarGapAnchors);
+
+    // Translate begin and end position.
+    int smallVarBeginPos2 = toViewPosition(smallVarGaps, smallVarBeginPos);
+    int smallVarBeginPos3 = toSourcePosition(refGaps, smallVarBeginPos2);
+    int smallVarEndPos2 = toViewPosition(smallVarGaps, smallVarEndPos);
+    int smallVarEndPos3 = toSourcePosition(refGaps, smallVarEndPos2);
+    return std::make_pair(smallVarBeginPos3, smallVarEndPos3);
 }
 
 // --------------------------------------------------------------------------
 // Function PositionMap::reinit()
 // --------------------------------------------------------------------------
 
-void PositionMap::reinit(unsigned contigLength)
+void PositionMap::reinit(TJournalEntries const & journal)
 {
-    // Reset the journal.
-    seqan::reinit(smallVariantJournal, contigLength);
     // Reset the interval tree.
     // TODO(holtgrew): Better API support for IntervalTree?
     svIntervalTree = TIntervalTree();
+
+    // Convert the journal to two gaps.
+    //
+    // Get anchor gaps objects from anchors.
+    typedef seqan::Iterator<TGaps, seqan::Standard>::Type TGapsIter;
+    TGaps refGaps(seqan::Nothing(), refGapAnchors);
+    TGapsIter itRef = begin(refGaps, seqan::Standard());
+    TGaps smallVarGaps(seqan::Nothing(), smallVarGapAnchors);
+    TGapsIter itVar = begin(smallVarGaps, seqan::Standard());
+
+    // Iterate over the journal.
+    typedef seqan::Iterator<TJournalEntries const, seqan::Standard>::Type TJournalEntriesIt;
+    TJournalEntriesIt it = begin(journal, seqan::Standard());
+    SEQAN_ASSERT_NEQ(it->segmentSource, seqan::SOURCE_NULL);
+    SEQAN_ASSERT_EQ(it->virtualPosition, 0u);
+
+    unsigned lastRefPos = seqan::maxValue<unsigned>();  // Previous position from reference.
+    for (; it != end(journal, seqan::Standard()); ++it)
+    {
+        SEQAN_ASSERT_NEQ(it->segmentSource, seqan::SOURCE_NULL);
+        if (it->segmentSource == seqan::SOURCE_ORIGINAL)
+        {
+            if (lastRefPos == seqan::maxValue<unsigned>())
+            {
+                if (it->physicalPosition != 0)
+                {
+                    insertGaps(itRef, it->physicalPosition);
+                    itRef += it->physicalPosition;
+                    itVar += it->physicalPosition;
+                    lastRefPos = it->physicalPosition + it->length;
+                    // std::cerr << "INSERT REF GAPS\t" << it->physicalPosition << "\n";
+                }
+                itRef += it->length;
+                itVar += it->length;
+                // std::cerr << "FORWARD\t" << it->length << "\n";
+            }
+            else
+            {
+                if (it->physicalPosition != lastRefPos)
+                {
+                    int len = it->physicalPosition - lastRefPos;
+                    insertGaps(itVar, len);
+                    // std::cerr << "INSERT VAR GAPS\t" << len << "\n";
+                    itRef += len;
+                    itVar += len;
+                    // std::cerr << "FORWARD\t" << len << "\n";
+                }
+                itRef += it->length;
+                itVar += it->length;
+                // std::cerr << "2 FORWARD\t" << it->length << "\n";
+            }
+            lastRefPos = it->physicalPosition + it->length;
+        }
+        else
+        {
+            insertGaps(itRef, it->length);
+            // std::cerr << "INSERT REF GAPS\t" << it->length << "\n";
+            itRef += it->length;
+            itVar += it->length;
+            // std::cerr << "FORWARD\t" << it->length << "\n";
+        }
+    }
+
+    // std::cerr << "--> done\n";
+
+    // typedef seqan::Gaps<seqan::CharString, seqan::AnchorGaps<TGapAnchors> > TGaps2;
+    // seqan::CharString seqH = "XXXXXXXXXXXXXXXXXXXXXXXX";
+    // seqan::CharString seqV = "XXXXXXXXXXXXXXXXXXXXXXXX";
+    // TGaps2 gapsH(seqH, refGapAnchors);
+    // TGaps2 gapsV(seqV, smallVarGapAnchors);
+
+    // std::cerr << "REF\t" << gapsH << "\n"
+    //           << "VAR\t" << gapsV << "\n";
 }
