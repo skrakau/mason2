@@ -9,7 +9,17 @@ void IdSplitter::open()
     close();
     for (unsigned i = 0; i < numContigs; ++i)
     {
-        files.push_back(tmpfile());
+        char const * tmpdir = 0;
+        if ((tmpdir = getenv("TMPDIR")) == NULL)
+            tmpdir = "/tmp";
+        std::string pathTpl = tmpdir;
+        pathTpl += "/MASON_XXXXXX";
+
+        int fd = mkstemp(&pathTpl[0]);
+        files.push_back(fopen(pathTpl.c_str(), "w+b"));
+        remove(pathTpl.c_str());
+        ::close(fd);
+
         if (!files.back())
         {
             std::cerr << "ERROR: Could not open temporary file!\n";
@@ -28,6 +38,7 @@ void IdSplitter::reset()
         if (files[i] != 0)
         {
             SEQAN_ASSERT(!ferror(files[i]));
+            fflush(files[i]);
             int res = fseek(files[i], 0L, SEEK_SET);
             (void)res;
             SEQAN_ASSERT_EQ(res, 0);
