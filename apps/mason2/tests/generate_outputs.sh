@@ -79,8 +79,8 @@ echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.
 ${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.right3.fa >simulator.out3.stdout 2>simulator.out3.stderr
 
 # Without VCF variants, FASTA output, no SAM alignments, single-end
-echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left4.fa >simulator.out4.stdout 2>simulator.out4.stderr"
-${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left4.fa >simulator.out4.stdout 2>simulator.out4.stderr
+echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left4.fa -oa simulator.out4.sam >simulator.out4.stdout 2>simulator.out4.stderr"
+${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left4.fa -oa simulator.out4.sam >simulator.out4.stdout 2>simulator.out4.stderr
 echo $?
 
 # Without VCF variants, FASTQ output, no SAM alignment, paired-end, BS-seq.

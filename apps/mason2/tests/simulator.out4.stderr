@@ -7,6 +7,7 @@ Opening reference and variants file ... OK
 Initializing fragment-to-contig distribution ... OK
 Initializing simulation threads ... OK
 Opening output file simulator.left4.fa ... OK
+Opening output file simulator.out4.sam... OK
 
 ____READ SIMULATION___________________________________________________________
 
