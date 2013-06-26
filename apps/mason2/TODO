@@ -7,6 +7,9 @@ URGENT
 mason_simulator
 
  * projection of alignments to the reference sequence.
+   * realignment of single-end
+   * add test for single-end with SVs
+   * all of paired-end
  * FASTQ input from a typical run for quality and N-patterns, cycle through data
    - This requires bulk-simulation of reads to circumvent possible problems.
 

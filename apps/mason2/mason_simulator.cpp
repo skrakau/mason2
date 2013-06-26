@@ -133,6 +133,7 @@ public:
     void _simulatePairedEnd(seqan::Dna5String const & seq, PositionMap const & posMap, int rID, int hID)
     {
         std::stringstream ss;
+        (void)posMap;  // TODO(holtgrew): Use for projecting to reference.
 
         for (unsigned i = 0; i < 2 * fragmentIds.size(); i += 2)
         {
@@ -248,7 +249,7 @@ public:
             _setId(ids[i], ss, fragmentIds[i], 0, infos[i]);
             if (buildAlignments)
                 _buildSingleEndAlignment(alignmentRecords[i], infos[i], seqs[i], ss, quals[i],
-                                         rID, hID, fragmentIds[i]);
+                                         posMap, rID, hID, fragmentIds[i]);
         }
     }
 
@@ -259,29 +260,55 @@ public:
                                   seqan::Dna5String & seq,  // state restored after call
                                   std::stringstream & ss,  // state
                                   seqan::CharString const & qual,
+                                  PositionMap const & posMap,
                                   int rID, int hID, int fID)
     {
+        // Reset record.
+        clear(record);
+        // Mark clear single-end fields.
+        record.rNextId = seqan::BamAlignmentRecord::INVALID_REFID;
+        record.pNext = seqan::BamAlignmentRecord::INVALID_POS;
+        record.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+
+        // Update info and set query name.
         info.rID = rID;
         info.hID = hID;
         _setId(record.qName, ss, fID, 1, info, true);
-        record.flag = 0;
-        record.rID = rID;
-        record.beginPos = info.beginPos;
-        if (!info.isForward)
+
+        int len = 0;
+        _getLengthInRef(info.cigar, len);
+        if (posMap.overlapsWithBreakpoint(info.beginPos, info.beginPos + len))
         {
-            record.flag = seqan::BAM_FLAG_RC;
-            reverseComplement(seq);
-            reverse(qual);
-            reverse(info.cigar);
+            // Record for unaligned single-end read.
+            record.flag = seqan::BAM_FLAG_UNMAPPED;
+            record.rID = seqan::BamAlignmentRecord::INVALID_REFID;
+            record.beginPos = seqan::BamAlignmentRecord::INVALID_POS;
+            record.seq = seq;
+            record.qual = qual;
         }
-        record.cigar = info.cigar;
-        record.seq = seq;
-        record.qual = qual;
-        if (!info.isForward)
+        else
         {
-            reverseComplement(seq);
-            reverse(qual);
-            reverse(info.cigar);
+            // Record for aligned single-end read.
+            record.flag = 0;
+            record.rID = rID;
+            record.beginPos = info.beginPos;
+            if (!info.isForward)  // change state for reverse-complement
+            {
+                record.flag = seqan::BAM_FLAG_RC;
+                reverseComplement(seq);
+                reverse(qual);
+                reverse(info.cigar);
+            }
+            // TODO(holtgrew): Re-align to CIGAR string to reference!
+            record.cigar = info.cigar;
+            record.seq = seq;
+            record.qual = qual;
+            if (!info.isForward)  // restore state again
+            {
+                reverseComplement(seq);
+                reverse(qual);
+                reverse(info.cigar);
+            }
         }
     }
 
