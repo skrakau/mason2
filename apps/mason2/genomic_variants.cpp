@@ -119,16 +119,15 @@ int VariantMaterializer::_runImpl(
         return 1;
 
     // Build position map for large variant -> small variant and small variant <-> reference position mapping.
-    PositionMap positionMap;
-    positionMap.reinit(journal);  // build mapping from small variant to reference positions
+    posMap.reinit(journal);  // build mapping from small variant to reference positions
     
-    // Apply structural variants and build the interval tree of positionMap
-    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, positionMap, journal, seqSmallVariants,
+    // Apply structural variants and build the interval tree of posMap
+    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, posMap, journal, seqSmallVariants,
                                   *variants, smallLvlsPtr, haplotypeId) != 0)
         return 1;
 
     // Copy out SV breakpoints.
-    positionMap.svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
+    posMap.svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
 
     return 0;
 }

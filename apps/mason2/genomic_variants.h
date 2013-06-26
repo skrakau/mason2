@@ -370,7 +370,10 @@ public:
     Variants const * variants;
     // Options for the methylation level simulator.  Methylation simulation is required for fixing methylation levels.
     MethylationLevelSimulatorOptions const * methSimOptions;
-    // When materializing the variants, 
+
+    // Contains the position mapping information between large and small variants and original sequence coordinate
+    // systems.  Updated after loading the variants of each contig.
+    PositionMap posMap;
 
     // Verbosity.
     int verbosity;
