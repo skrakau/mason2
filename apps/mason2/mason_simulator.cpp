@@ -130,7 +130,7 @@ public:
         str = ss.str();
     }
 
-    void _simulatePairedEnd(seqan::Dna5String const & seq, int rID, int hID)
+    void _simulatePairedEnd(seqan::Dna5String const & seq, PositionMap const & posMap, int rID, int hID)
     {
         std::stringstream ss;
 
@@ -237,7 +237,7 @@ public:
     }
 
 
-    void _simulateSingleEnd(seqan::Dna5String const & seq, int rID, int hID)
+    void _simulateSingleEnd(seqan::Dna5String const & seq, PositionMap const & posMap, int rID, int hID)
     {
         std::stringstream ss;
 
@@ -286,7 +286,7 @@ public:
     }
 
     // Simulate next chunk.
-    void run(seqan::Dna5String const & seq, int rID, int hID)
+    void run(seqan::Dna5String const & seq, PositionMap const & posMap, int rID, int hID)
     {
         // Sample fragments.
         fragSampler->generateMany(fragments, rID, length(seq), fragmentIds.size());
@@ -301,9 +301,9 @@ public:
             alignmentRecords.resize(seqCount);
         // TODO(holtgrew): Optimize number of virtual function calls.
         if (options->seqOptions.simulateMatePairs)
-            _simulatePairedEnd(seq, rID, hID);
+            _simulatePairedEnd(seq, posMap, rID, hID);
         else
-            _simulateSingleEnd(seq, rID, hID);
+            _simulateSingleEnd(seq, posMap, rID, hID);
     }
 };
 
@@ -431,7 +431,7 @@ public:
                 // Perform the simulation.
                 SEQAN_OMP_PRAGMA(parallel num_threads(options.numThreads))
                 {
-                    threads[omp_get_thread_num()].run(contigSeq, rID, hID);
+                    threads[omp_get_thread_num()].run(contigSeq, vcfMat.posMap, rID, hID);
                 }
                     
                 // Write out the temporary sequence.

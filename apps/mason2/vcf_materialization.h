@@ -66,6 +66,10 @@ public:
     // Options for the methylation simulation.
     MethylationLevelSimulatorOptions const * methOptions;
 
+    // The PositionMap is built for each contig to map between large variants, small variants, and original coordinate
+    // system.
+    PositionMap posMap;
+
     // ------------------------------------------------------------------------
     // Paths
     // ------------------------------------------------------------------------

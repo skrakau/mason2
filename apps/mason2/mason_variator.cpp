@@ -948,7 +948,8 @@ public:
         if (options.methSimOptions.simulateMethylationLevels)
         {
             MethylationLevels levelsVariants;
-            varMat.run(seqVariants, levelsVariants, breakpoints, contig, levels, hId);
+            PositionMap posMap;  // unused, though
+            varMat.run(seqVariants, posMap, levelsVariants, breakpoints, contig, levels, hId);
             // Write out methylation levels if necessary.
             if (!empty(options.methFastaOutFile))
                 if (_writeMethylationLevels(levelsVariants, hId, rId) != 0)
@@ -956,7 +957,8 @@ public:
         }
         else
         {
-            varMat.run(seqVariants, breakpoints, contig, hId);
+            PositionMap posMap;  // unused, though
+            varMat.run(seqVariants, posMap, breakpoints, contig, hId);
         }
 
         // Build sequence id.

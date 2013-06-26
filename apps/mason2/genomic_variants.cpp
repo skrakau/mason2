@@ -98,6 +98,7 @@ std::ostream & operator<<(std::ostream & out, StructuralVariantRecord const & re
 
 int VariantMaterializer::_runImpl(
         seqan::Dna5String * resultSeq,
+        PositionMap * posMap,
         MethylationLevels * resultLvls,
         std::vector<int> & breakpoints,
         seqan::Dna5String const * ref,
@@ -119,15 +120,15 @@ int VariantMaterializer::_runImpl(
         return 1;
 
     // Build position map for large variant -> small variant and small variant <-> reference position mapping.
-    posMap.reinit(journal);  // build mapping from small variant to reference positions
+    posMap->reinit(journal);  // build mapping from small variant to reference positions
     
     // Apply structural variants and build the interval tree of posMap
-    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, posMap, journal, seqSmallVariants,
+    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, *posMap, journal, seqSmallVariants,
                                   *variants, smallLvlsPtr, haplotypeId) != 0)
         return 1;
 
     // Copy out SV breakpoints.
-    posMap.svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
+    posMap->svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
 
     return 0;
 }

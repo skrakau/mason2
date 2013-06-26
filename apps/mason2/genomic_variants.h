@@ -371,10 +371,6 @@ public:
     // Options for the methylation level simulator.  Methylation simulation is required for fixing methylation levels.
     MethylationLevelSimulatorOptions const * methSimOptions;
 
-    // Contains the position mapping information between large and small variants and original sequence coordinate
-    // systems.  Updated after loading the variants of each contig.
-    PositionMap posMap;
-
     // Verbosity.
     int verbosity;
 
@@ -393,27 +389,30 @@ public:
     //
     // Breakpoints is a vector of points on the contig.
     int run(seqan::Dna5String & resultSeq,
-             std::vector<int> & breakpoints,
-             seqan::Dna5String const & refSeq,
-             int haplotypeId)
+            PositionMap & posMap,
+            std::vector<int> & breakpoints,
+            seqan::Dna5String const & refSeq,
+            int haplotypeId)
     {
-        return _runImpl(&resultSeq, 0, breakpoints, &refSeq, 0, haplotypeId);
+        return _runImpl(&resultSeq, &posMap, 0, breakpoints, &refSeq, 0, haplotypeId);
     }
 
     // Same as the run() above, but including reference levels.
     int run(seqan::Dna5String & resultSeq,
+            PositionMap & posMap,
             MethylationLevels & resultLvls,
             std::vector<int> & breakpoints,
             seqan::Dna5String const & refSeq,
             MethylationLevels const & refLvls,
             int haplotypeId)
     {
-        return _runImpl(&resultSeq, &resultLvls, breakpoints, &refSeq, &refLvls, haplotypeId);
+        return _runImpl(&resultSeq, &posMap, &resultLvls, breakpoints, &refSeq, &refLvls, haplotypeId);
     }
 
     // Implementation of the materialization, uses pointers instead of references for deciding whether materializing
     // levels or not.
     int _runImpl(seqan::Dna5String * resultSeq,
+                 PositionMap * posMap,
                  MethylationLevels * resultLvls,
                  std::vector<int> & breakpoints,
                  seqan::Dna5String const * ref,
