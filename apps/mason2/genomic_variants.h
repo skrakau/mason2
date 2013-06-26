@@ -272,7 +272,7 @@ struct GenomicInterval
     int svBeginPos;
     int svEndPos;
 
-    // Begin and end position on sequence without SVs.
+    // Begin and end position on sequence without SVs.  Set to [-1, -1) in case of insertion.
     int smallVarBeginPos;
     int smallVarEndPos;
 
@@ -316,6 +316,8 @@ public:
 
     typedef seqan::String<seqan::GapAnchor<int> > TGapAnchors;
     typedef seqan::Gaps<seqan::Nothing, seqan::AnchorGaps<TGapAnchors> > TGaps;
+
+    // TODO(holtgrew): We need a function *in this class* that builds the large variants data strutures for better encapsulation!
 
     // Gap anchors for gaps for translating between original and small variant coordinate system.
     TGapAnchors refGapAnchors, smallVarGapAnchors;
@@ -432,6 +434,7 @@ public:
     int _materializeLargeVariants(seqan::Dna5String & seq,
                                   MethylationLevels * levelsLargeVariants,
                                   std::vector<int> & breakpoints,
+                                  PositionMap & positionMap,
                                   TJournalEntries const & journal,
                                   seqan::Dna5String const & contig,
                                   Variants const & variants,

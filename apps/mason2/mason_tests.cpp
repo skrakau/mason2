@@ -276,7 +276,6 @@ SEQAN_DEFINE_TEST(mason_tests_position_map_to_original_interval)
         PositionMap positionMap;
         positionMap.reinit(journal);
 
-
         // Check toOriginalInterval.
         std::pair<int, int> i1 = positionMap.toOriginalInterval(3, 5);
         SEQAN_ASSERT_EQ(i1.first, 2);

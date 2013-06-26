@@ -117,11 +117,18 @@ int VariantMaterializer::_runImpl(
     if (_materializeSmallVariants(seqSmallVariants, journal, smallLvlsPtr, *ref, *variants,
                                   refLvls, haplotypeId) != 0)
         return 1;
+
+    // Build position map for large variant -> small variant and small variant <-> reference position mapping.
+    PositionMap positionMap;
+    positionMap.reinit(journal);  // build mapping from small variant to reference positions
     
-    // Apply structural variants.
-    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, journal, seqSmallVariants, *variants,
-                                  smallLvlsPtr, haplotypeId) != 0)
+    // Apply structural variants and build the interval tree of positionMap
+    if (_materializeLargeVariants(*resultSeq, resultLvls, breakpoints, positionMap, journal, seqSmallVariants,
+                                  *variants, smallLvlsPtr, haplotypeId) != 0)
         return 1;
+
+    // Copy out SV breakpoints.
+    positionMap.svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
 
     return 0;
 }
@@ -306,6 +313,7 @@ int VariantMaterializer::_materializeLargeVariants(
         seqan::Dna5String & seq,
         MethylationLevels * levelsLargeVariants,
         std::vector<int> & breakpoints,
+        PositionMap & positionMap,
         TJournalEntries const & journal,
         seqan::Dna5String const & contig,
         Variants const & variants,
@@ -317,6 +325,9 @@ int VariantMaterializer::_materializeLargeVariants(
         SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levelsLargeVariants != 0));
         SEQAN_ASSERT_EQ(methSimOptions->simulateMethylationLevels, (levels != 0));
     }
+
+    // We will record all intervals for the positionMap.svIntervalTree in this String.
+    seqan::String<GenomicInterval> intervals;
 
     // Clear output methylation levels->
     if (levelsLargeVariants)
@@ -331,7 +342,7 @@ int VariantMaterializer::_materializeLargeVariants(
         std::cerr << __LINE__ << "\tlastPos == " << lastPos << "\n";
 
     // Number of bytes written out so far/current position in variant.
-    int currentPos = 0;
+    unsigned currentPos = 0;
 
     for (unsigned i = 0; i < length(variants.svRecords); ++i)
     {
@@ -364,6 +375,9 @@ int VariantMaterializer::_materializeLargeVariants(
             append(levelsLargeVariants->reverse, infix(levels->reverse, lastPos, svRecord.pos));
             appendValue(varPoints, std::make_pair(length(seq), false));
         }
+        if (currentPos != length(seq))
+            appendValue(intervals, GenomicInterval(currentPos, length(seq), lastPos, svRecord.pos,
+                                                   '+', GenomicInterval::NORMAL));
         currentPos = length(seq);
         if (verbosity >= 3)
             std::cerr << "append(seq, infix(contig, " << lastPos << ", " << svRecord.pos << ") " << __LINE__ << " (interim)\n";
@@ -383,7 +397,7 @@ int VariantMaterializer::_materializeLargeVariants(
                             methSim.run(lvls, svRecord.seq);
                         }
 
-                        // Append novel sequence and methylation levels->
+                        // Append novel sequence and methylation levels.
                         append(seq, svRecord.seq);
                         if (methSimOptions && methSimOptions->simulateMethylationLevels)
                         {
@@ -391,6 +405,9 @@ int VariantMaterializer::_materializeLargeVariants(
                             append(levelsLargeVariants->reverse, lvls.reverse);
                             appendValue(varPoints, std::make_pair(length(seq), false));  // variation point after insertion
                         }
+                        if (currentPos != length(seq))
+                            appendValue(intervals, GenomicInterval(currentPos, length(seq), -1, -1,
+                                                                   '+', GenomicInterval::INSERTED));
                         if (verbosity >= 3)
                             std::cerr << "append(seq, svRecord.seq (length == " << length(svRecord.seq) << ") " << __LINE__ << " (insertion)\n";
                         lastPos = svRecord.pos;
@@ -424,6 +441,9 @@ int VariantMaterializer::_materializeLargeVariants(
                         append(levelsLargeVariants->reverse, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
                         reverse(infix(levelsLargeVariants->reverse, oldLen, length(levelsLargeVariants->reverse)));
                     }
+                    if (currentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(currentPos, length(seq), svRecord.pos, svRecord.pos + svRecord.size,
+                                                               '-', GenomicInterval::INVERTED));
 
                     if (verbosity >= 3)
                         std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (inversion)\n";
@@ -448,6 +468,10 @@ int VariantMaterializer::_materializeLargeVariants(
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos + svRecord.size, svRecord.targetPos));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
                     }
+                    if (currentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(currentPos, length(seq), svRecord.pos + svRecord.size, svRecord.targetPos,
+                                                               '+', GenomicInterval::NORMAL));
+                    unsigned tmpCurrentPos = length(seq);
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
                     if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
@@ -455,6 +479,9 @@ int VariantMaterializer::_materializeLargeVariants(
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos, svRecord.pos + svRecord.size));
                     }
+                    if (tmpCurrentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(tmpCurrentPos, length(seq), svRecord.pos, svRecord.pos + svRecord.size,
+                                                               '+', GenomicInterval::NORMAL));
                     if (verbosity >= 3)
                         std::cerr << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << " (translocation)\n"
                                   << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << "\n";
@@ -473,12 +500,16 @@ int VariantMaterializer::_materializeLargeVariants(
                 {
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
                     SEQAN_ASSERT_GEQ(svRecord.targetPos, svRecord.pos + svRecord.size);
-                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)  // first copy
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos, svRecord.pos + svRecord.size));
                     }
+                    if (currentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(currentPos, length(seq), svRecord.pos, svRecord.pos + svRecord.size,
+                                                               '+', GenomicInterval::DUPLICATED));
+                    unsigned tmpCurrentPos = length(seq);
                     append(seq, infix(contig, svRecord.pos + svRecord.size, svRecord.targetPos));
                     if (methSimOptions && methSimOptions->simulateMethylationLevels)
                     {
@@ -486,13 +517,20 @@ int VariantMaterializer::_materializeLargeVariants(
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos + svRecord.size, svRecord.targetPos));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos + svRecord.size, svRecord.targetPos));
                     }
+                    if (tmpCurrentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(tmpCurrentPos, length(seq), svRecord.pos + svRecord.size, svRecord.targetPos,
+                                                               '+', GenomicInterval::NORMAL));
+                    tmpCurrentPos = length(seq);
                     append(seq, infix(contig, svRecord.pos, svRecord.pos + svRecord.size));
-                    if (methSimOptions && methSimOptions->simulateMethylationLevels)
+                    if (methSimOptions && methSimOptions->simulateMethylationLevels)  // second copy
                     {
                         appendValue(varPoints, std::make_pair(length(seq), false));
                         append(levelsLargeVariants->forward, infix(levels->forward, svRecord.pos, svRecord.pos + svRecord.size));
                         append(levelsLargeVariants->reverse, infix(levels->reverse, svRecord.pos, svRecord.pos + svRecord.size));
                     }
+                    if (tmpCurrentPos != length(seq))
+                        appendValue(intervals, GenomicInterval(tmpCurrentPos, length(seq), svRecord.pos, svRecord.pos + svRecord.size,
+                                                               '+', GenomicInterval::NORMAL));
                     if (verbosity >= 3)
                         std::cerr << "append(seq, infix(contig, " << svRecord.pos << ", " << svRecord.pos + svRecord.size << ") " << __LINE__ << " (duplication)\n"
                                   << "append(seq, infix(contig, " << svRecord.pos + svRecord.size << ", " << svRecord.targetPos << ") " << __LINE__ << "\n"
@@ -527,6 +565,16 @@ int VariantMaterializer::_materializeLargeVariants(
 
         fixVariationLevels(*levelsLargeVariants, *rng, seq, varPoints, *methSimOptions);
     }
+    if (currentPos != length(seq))
+        appendValue(intervals, GenomicInterval(currentPos, length(seq), lastPos, length(contig),
+                                               '+', GenomicInterval::NORMAL));
+
+    // Build the interval tree of the positionMap.
+    seqan::String<PositionMap::TInterval> svIntervals;
+    for (unsigned i = 0; i < length(intervals); ++i)
+        appendValue(svIntervals, PositionMap::TInterval(
+                intervals[i].svBeginPos, intervals[i].svEndPos, intervals[i]));
+    createIntervalTree(positionMap.svIntervalTree, svIntervals);
         
     return 0;
 }
@@ -608,9 +656,10 @@ std::pair<int, int> PositionMap::toOriginalInterval(int smallVarBeginPos, int sm
 
 void PositionMap::reinit(TJournalEntries const & journal)
 {
-    // Reset the interval tree.
+    // Reset the interval tree and breakpoints.
     // TODO(holtgrew): Better API support for IntervalTree?
     svIntervalTree = TIntervalTree();
+    svBreakpoints.clear();
 
     // Convert the journal to two gaps.
     //
