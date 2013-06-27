@@ -49,6 +49,7 @@ add_library (mason_sim
              mason_types.h
              methylation_levels.cpp
              methylation_levels.h
+             omp_wrapper.h
              sequencing.h
              simulate_454.cpp
              simulate_base.cpp
