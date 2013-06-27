@@ -34,6 +34,9 @@
 // Simulate sequencing process from a genome.
 // ==========================================================================
 
+// TODO(holtgrew): Because of const holder issues, there are problems with passing strings as const.
+// TODO(holtgrew): We should use bulk-reading calls to avoid indirect/virtual function calls.
+
 #include <vector>
 #include <utility>
 
@@ -200,8 +203,6 @@ public:
                            int beginPos,
                            int endPos)
     {
-        // TODO(holtgrew): Band using the CIGAR and length information?
-
         // Realign the read sequence against the original interval.
         typedef seqan::Infix<seqan::Dna5String>::Type TContigInfix;
         TContigInfix contigInfix(refSeq, beginPos, endPos);
@@ -209,7 +210,11 @@ public:
         seqan::Gaps<seqan::Dna5String> gapsRead(seq);
         seqan::Score<int, seqan::Simple> sScheme(0, -1000, -1001, -1002);
 
-        editDistance = globalAlignment(gapsContig, gapsRead, sScheme);
+        int buffer = 3;  // should be unnecessary
+        int uDiag = std::max((int)(length(contigInfix) - length(seq)), 0) + buffer;
+        int lDiag = -std::max((int)(length(seq) - length(contigInfix)), 0) - buffer;
+
+        editDistance = globalAlignment(gapsContig, gapsRead, sScheme, lDiag, uDiag);
         editDistance /= -1000;  // score to edit distance
 
         getCigarString(record.cigar, gapsContig, gapsRead, seqan::maxValue<int>());
@@ -483,8 +488,6 @@ public:
                            int beginPos,
                            int endPos)
     {
-        // TODO(holtgrew): Band using the CIGAR and length information?
-
         // Realign the read sequence against the original interval.
         typedef seqan::Infix<seqan::Dna5String>::Type TContigInfix;
         TContigInfix contigInfix(refSeq, beginPos, endPos);
@@ -492,7 +495,11 @@ public:
         seqan::Gaps<seqan::Dna5String> gapsRead(seq);
         seqan::Score<int, seqan::Simple> sScheme(0, -1000, -1001, -1002);
 
-        editDistance = globalAlignment(gapsContig, gapsRead, sScheme);
+        int buffer = 3;  // should be unnecessary
+        int uDiag = std::max((int)(length(contigInfix) - length(seq)), 0) + buffer;
+        int lDiag = -std::max((int)(length(seq) - length(contigInfix)), 0) - buffer;
+
+        editDistance = globalAlignment(gapsContig, gapsRead, sScheme, lDiag, uDiag);
         editDistance /= -1000;  // score to edit distance
 
         getCigarString(record.cigar, gapsContig, gapsRead, seqan::maxValue<int>());
@@ -599,7 +606,7 @@ public:
 
     void _simulatePairedEnd(seqan::Dna5String const & seq, PositionMap const & posMap,
                             seqan::CharString const & refName,
-                            seqan::Dna5String /*const*/ & refSeq,  // TODO(holtgrew): const-issue in Holder
+                            seqan::Dna5String /*const*/ & refSeq,
                             int rID, int hID)
     {
         std::stringstream ss;
@@ -631,10 +638,10 @@ public:
         }
     }
 
-    void _simulateSingleEnd(seqan::Dna5String /*const*/ & seq,  // TODO(holtgrew): Const-holder issues in Gaps :|
+    void _simulateSingleEnd(seqan::Dna5String /*const*/ & seq,
                             PositionMap const & posMap,
                             seqan::CharString const & refName,
-                            seqan::Dna5String /*const*/ & refSeq,  // TODO(holtgrew): Const-holder issues in Gaps :|
+                            seqan::Dna5String /*const*/ & refSeq,
                             int rID, int hID)
     {
         std::stringstream ss;
@@ -658,10 +665,10 @@ public:
     }
 
     // Simulate next chunk.
-    void run(seqan::Dna5String /*const*/ & seq,  // TODO(holtgrew): const-holder problems
+    void run(seqan::Dna5String /*const*/ & seq,
              PositionMap const & posMap,
              seqan::CharString const & refName,
-             seqan::Dna5String /*const*/ & refSeq,  // TODO(holtgrew): Const-holder issues in Gaps :|
+             seqan::Dna5String /*const*/ & refSeq,
              int rID, int hID)
     {
         // Sample fragments.
@@ -675,7 +682,6 @@ public:
         infos.resize(seqCount);
         if (buildAlignments)
             alignmentRecords.resize(seqCount);
-        // TODO(holtgrew): Optimize number of virtual function calls.
         if (options->seqOptions.simulateMatePairs)
             _simulatePairedEnd(seq, posMap, refName, refSeq, rID, hID);
         else
@@ -846,7 +852,6 @@ public:
         fragmentSplitter.reset();
         fastxJoiner.reset(new FastxJoiner<seqan::Fastq>(fragmentSplitter));
         FastxJoiner<seqan::Fastq> & joiner = *fastxJoiner.get();  // Shortcut
-        // TODO(holtgrew): Use bulk-reading calls.
         seqan::CharString id, seq, qual;
         if (options.seqOptions.simulateMatePairs)
             while (!joiner.atEnd())
