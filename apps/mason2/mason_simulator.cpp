@@ -61,7 +61,7 @@ class SingleEndRecordBuilder
 public:
     // The sequencing simulation information to use.
     SequencingSimulationInfo & info;
-    // The read sequence.
+    // The read sequence; state, restored after call
     seqan::Dna5String & seq;
     // State for integer to string conversion and such.
     std::stringstream & ss;
@@ -69,9 +69,8 @@ public:
     seqan::CharString const & qual;
     // Position map to use.
     PositionMap const & posMap;
-    // Reference name.
+    // Reference name and sequence.
     seqan::CharString const & refName;
-    // Reference sequence.
     seqan::Dna5String /*const*/ & refSeq;
     // ID of reference, haplotype, and fragment.
     int rID, hID, fID;
@@ -93,9 +92,6 @@ public:
     {
         _initialize(record);
 
-        // Get genomic interval that the mapping is on.
-        GenomicInterval gi = posMap.getGenomicInterval(info.beginPos);
-
         // Get length of alignment in reference.
         int len = 0;
         _getLengthInRef(info.cigar, len);
@@ -103,8 +99,13 @@ public:
         // Compute whether the alignment overlaps with a breakpoint.
         bool overlapsWithBreakpoint = posMap.overlapsWithBreakpoint(info.beginPos, info.beginPos + len);
 
+        // Get genomic interval that the mapping is on.
+        GenomicInterval gi;
+        if (!overlapsWithBreakpoint)
+            gi = posMap.getGenomicInterval(info.beginPos);
+
         // Fill fields depending on being aligned/unaligned record.
-        if (gi.kind == GenomicInterval::INSERTED || overlapsWithBreakpoint)
+        if (overlapsWithBreakpoint || gi.kind == GenomicInterval::INSERTED)
             _fillUnaligned(record, overlapsWithBreakpoint);
         else
             _fillAligned(record, len);
@@ -145,7 +146,8 @@ public:
     }
 
     // Fill the record's members for an aligned record.
-    void _fillAligned(seqan::BamAlignmentRecord & record, int len = 0)
+    void _fillAligned(seqan::BamAlignmentRecord & record,
+                      int len = 0)
     {
         // Convert from coordinate system with SVs to coordinate system with small variants.
         std::pair<int, int> intSmallVar = posMap.toSmallVarInterval(info.beginPos, info.beginPos + len);
@@ -163,7 +165,7 @@ public:
 
         // Perform the alignment to compute the edit distance and the CIGAR string.
         int editDistance = 0;
-        _alignAndSetCigar(record, editDistance, intOriginal.first, intOriginal.second);
+        _alignAndSetCigar(record, editDistance, seq, intOriginal.first, intOriginal.second);
 
         // Set the remaining flags.
         record.rID = rID;
@@ -190,6 +192,7 @@ public:
 
     // Perform the realignment and set cigar string.
     void _alignAndSetCigar(seqan::BamAlignmentRecord & record, int & editDistance,
+                           seqan::Dna5String & seq,
                            int beginPos, int endPos)
     {
         // TODO(holtgrew): Band using the CIGAR and length information?
@@ -216,6 +219,282 @@ public:
         setTagValue(tagsDict, "oH", hID + 1);             // original haplotype
         setTagValue(tagsDict, "oP", info.beginPos);       // original position
         setTagValue(tagsDict, "oS", info.isForward ? 'F' : 'R');  // original strand
+    }
+};
+
+// --------------------------------------------------------------------------
+// Class PairedEndRecordBuilder
+// --------------------------------------------------------------------------
+
+// Build the single-end records.
+//
+// Put into its own class to facilitate splitting into smaller functions.
+
+class PairedEndRecordBuilder
+{
+public:
+    // The sequencing simulation information to use.
+    SequencingSimulationInfo & infoL;
+    SequencingSimulationInfo & infoR;
+    // The read sequences; state, restored after call.
+    seqan::Dna5String & seqL;
+    seqan::Dna5String & seqR;
+    // State for integer to string conversion and such.
+    std::stringstream & ss;
+    // Quality strings.
+    seqan::CharString & qualL;
+    seqan::CharString & qualR;
+    // Position map to use for coordinate conversion.
+    PositionMap const & posMap;
+    // Reference name and sequence.
+    seqan::CharString const & refName;
+    seqan::Dna5String /*const*/ & refSeq;
+    // ID of teh reference, haplotype, and fragment.
+    int rID, hID, fID;
+
+    PairedEndRecordBuilder(SequencingSimulationInfo & infoL,
+                           SequencingSimulationInfo & infoR,
+                           seqan::Dna5String & seqL,
+                           seqan::Dna5String & seqR,
+                           std::stringstream & ss,
+                           seqan::CharString & qualL,
+                           seqan::CharString & qualR,
+                           PositionMap const & posMap,
+                           seqan::CharString const & refName,
+                           seqan::Dna5String /*const*/ & refSeq,
+                           int rID, int hID, int fID) :
+            infoL(infoL), infoR(infoR), seqL(seqL), seqR(seqR), ss(ss), qualL(qualL), qualR(qualR),
+            posMap(posMap), refName(refName), refSeq(refSeq), rID(rID), hID(hID), fID(fID)
+    {}
+
+    // Fills all record members, excdept for qName which uses shared logic in ReadSimulatorThread.
+    void build(seqan::BamAlignmentRecord & recordL,
+               seqan::BamAlignmentRecord & recordR)
+    {
+        _initialize(recordL, recordR);
+
+        // Get length of alignments in reference.
+        int lenL = 0, lenR = 0;
+        _getLengthInRef(infoL.cigar, lenL);
+        _getLengthInRef(infoR.cigar, lenR);
+
+        // Compute whether the left/right alignmetn overlaps with a breakpoint.
+        bool overlapsWithBreakpointL = posMap.overlapsWithBreakpoint(infoR.beginPos, infoL.beginPos + lenL);
+        bool overlapsWithBreakpointR = posMap.overlapsWithBreakpoint(infoR.beginPos, infoL.beginPos + lenR);
+
+        // Get genomic intervals that the mappings are on.
+        GenomicInterval giL, giR;
+        if (!overlapsWithBreakpointL)
+            giL = posMap.getGenomicInterval(infoL.beginPos);
+        if (!overlapsWithBreakpointR)
+            giR = posMap.getGenomicInterval(infoR.beginPos);
+
+        // Shortcuts.
+        bool unmappedL = (overlapsWithBreakpointL || giL.kind == GenomicInterval::INSERTED);
+        bool unmappedR = (overlapsWithBreakpointR || giR.kind == GenomicInterval::INSERTED);
+
+        // Fill single fields depending on being aligned/unaligned record.
+        if (unmappedL)
+            _fillUnaligned(recordL, seqL, qualL, overlapsWithBreakpointL);
+        else
+            _fillAligned(recordL, infoL, seqL, qualL, lenL);
+        if (unmappedR)
+            _fillUnaligned(recordR, seqR, qualR, overlapsWithBreakpointR);
+        else
+            _fillAligned(recordR, infoR, seqR, qualR, lenR);
+
+        // -------------------------------------------------------------------
+        // Complete flags and tLen.
+        // -------------------------------------------------------------------
+        //
+        // This is surprising complex.
+        recordL.flag |= seqan::BAM_FLAG_FIRST | seqan::BAM_FLAG_MULTIPLE;
+        recordR.flag |= seqan::BAM_FLAG_LAST  | seqan::BAM_FLAG_MULTIPLE;
+
+        if (!unmappedL && !unmappedR)
+        {
+            recordL.flag |= seqan::BAM_FLAG_ALL_PROPER;
+            recordR.flag |= seqan::BAM_FLAG_ALL_PROPER;
+            if (recordL.rID == recordR.rID)
+            {
+                if (recordL.beginPos < recordR.beginPos)
+                    recordL.tLen = recordR.beginPos + lenR - recordL.beginPos;
+                recordR.tLen = -recordL.tLen;
+            }
+            else
+            {
+                recordL.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+                recordR.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+            }
+
+            recordL.rNextId = recordR.rID;
+            recordL.pNext = recordR.beginPos;
+            recordR.rNextId = recordL.rID;
+            recordR.pNext = recordL.beginPos;
+
+            if (hasFlagRC(recordL))
+                recordR.flag |= seqan::BAM_FLAG_NEXT_RC;
+            if (hasFlagRC(recordR))
+                recordL.flag |= seqan::BAM_FLAG_NEXT_RC;
+        }
+        else if (!unmappedL && unmappedR)
+        {
+            recordR.rID = recordL.rID;
+            recordR.beginPos = recordL.beginPos;
+            recordR.flag |= seqan::BAM_FLAG_UNMAPPED;
+            recordL.flag |= seqan::BAM_FLAG_NEXT_UNMAPPED;
+
+            recordL.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+            recordR.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+        }
+        else if (unmappedL && !unmappedR)
+        {
+            recordL.rID = recordR.rID;
+            recordL.beginPos = recordR.beginPos;
+            recordL.flag |= seqan::BAM_FLAG_UNMAPPED;
+            recordR.flag |= seqan::BAM_FLAG_NEXT_UNMAPPED;
+
+            recordL.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+            recordR.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+        }
+        else if (unmappedL && unmappedR)
+        {
+            recordL.flag |= seqan::BAM_FLAG_UNMAPPED;
+            recordR.flag |= seqan::BAM_FLAG_NEXT_UNMAPPED;
+            recordL.flag |= seqan::BAM_FLAG_UNMAPPED;
+            recordR.flag |= seqan::BAM_FLAG_NEXT_UNMAPPED;
+        }
+    }
+
+    // Reset the record to be empty and reset records used for paired-end info.
+    void _initialize(seqan::BamAlignmentRecord & recordL, seqan::BamAlignmentRecord & recordR)
+    {
+        // Reset record.
+        clear(recordL);
+        clear(recordR);
+
+        // Mark clear single-end fields.
+        recordL.flag = 0;
+        recordL.rNextId = seqan::BamAlignmentRecord::INVALID_REFID;
+        recordL.pNext = seqan::BamAlignmentRecord::INVALID_POS;
+        recordL.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+        recordR.flag = 0;
+        recordR.rNextId = seqan::BamAlignmentRecord::INVALID_REFID;
+        recordR.pNext = seqan::BamAlignmentRecord::INVALID_POS;
+        recordR.tLen = seqan::BamAlignmentRecord::INVALID_LEN;
+
+        // Update info and set query name.
+        infoL.rID = rID;
+        infoL.hID = hID;
+        infoR.rID = rID;
+        infoR.hID = hID;
+    }
+
+    // Fill the record's members for an unaligned record.
+    void _fillUnaligned(seqan::BamAlignmentRecord & record,
+                        seqan::Dna5String const & seq,
+                        seqan::CharString const & qual,
+                        bool overlapsWithBreakpoint)
+    {
+        // Record for unaligned single-end read.
+        record.flag = seqan::BAM_FLAG_UNMAPPED;
+        record.rID = seqan::BamAlignmentRecord::INVALID_REFID;
+        record.beginPos = seqan::BamAlignmentRecord::INVALID_POS;
+        record.seq = seq;
+        record.qual = qual;
+
+        // Write out some tags with the information.
+        seqan::BamTagsDict tagsDict(record.tags);
+        // Set tag with the eason for begin unmapped: Inserted or over breakpoint.  We only reach here if the alignment
+        // does not overlap with a breakpoint in the case that the alignment is in an inserted region.
+        setTagValue(tagsDict, "uR", overlapsWithBreakpoint ? 'B' : 'I');
+    }
+
+    // Flip the sequence and quality in case that the record is reverse complemented.
+    void _flipState(SequencingSimulationInfo & infoRecord,
+                    seqan::Dna5String & seq,
+                    seqan::CharString & qual,
+                    bool doFlip)
+    {
+        if (doFlip)
+        {
+            reverseComplement(seq);
+            reverse(qual);
+            reverse(infoRecord.cigar);
+        }
+    }
+
+    // Fill the record's members for an aligned record.
+    void _fillAligned(seqan::BamAlignmentRecord & record,
+                      SequencingSimulationInfo & infoRecord,
+                      seqan::Dna5String & seq,  // state, restored
+                      seqan::CharString & qual, // state, restored
+                      int len = 0)
+    {
+        // Convert from coordinate system with SVs to coordinate system with small variants.
+        std::pair<int, int> intSmallVar = posMap.toSmallVarInterval(infoRecord.beginPos,
+                                                                    infoRecord.beginPos + len);
+        bool isRC = intSmallVar.first > intSmallVar.second;
+        if (isRC)
+            std::swap(intSmallVar.first, intSmallVar.second);
+        // Convert from small variant coordinate system to original interval.
+        std::pair<int, int> intOriginal = posMap.toOriginalInterval(intSmallVar.first, intSmallVar.second);
+
+        _flipState(infoRecord, seq, qual, infoRecord.isForward == isRC);  // possibly flip state
+
+        // Set the RC flag in the record.
+        if (infoRecord.isForward == isRC)
+            record.flag |= seqan::BAM_FLAG_RC;
+
+        // Perform the alignment to compute the edit distance and the CIGAR string.
+        int editDistance = 0;
+        _alignAndSetCigar(record, editDistance, seq, intOriginal.first, intOriginal.second);
+
+        // Set the remaining flags.
+        record.rID = rID;
+        record.beginPos = intOriginal.first;
+        record.seq = seq;
+        record.qual = qual;
+
+        _flipState(infoRecord, seq, qual, infoRecord.isForward == isRC);  // restore state if previously flipped
+
+        // Fill BAM tags.
+        _fillTags(record, infoRecord, editDistance);
+    }
+
+    // Perform the realignment and set cigar string.
+    void _alignAndSetCigar(seqan::BamAlignmentRecord & record,
+                           int & editDistance,
+                           seqan::Dna5String & seq,
+                           int beginPos,
+                           int endPos)
+    {
+        // TODO(holtgrew): Band using the CIGAR and length information?
+
+        // Realign the read sequence against the original interval.
+        typedef seqan::Infix<seqan::Dna5String>::Type TContigInfix;
+        TContigInfix contigInfix(refSeq, beginPos, endPos);
+        seqan::Gaps<TContigInfix> gapsContig(contigInfix);
+        seqan::Gaps<seqan::Dna5String> gapsRead(seq);
+        seqan::Score<int, seqan::Simple> sScheme(0, -1000, -1001, -1002);
+
+        editDistance = globalAlignment(gapsContig, gapsRead, sScheme);
+        editDistance /= -1000;  // score to edit distance
+
+        getCigarString(record.cigar, gapsContig, gapsRead, seqan::maxValue<int>());
+    }
+
+    // Fill the tags dict.
+    void _fillTags(seqan::BamAlignmentRecord & record,
+                   SequencingSimulationInfo & infoRecord,
+                   int editDistance)
+    {
+        (void)editDistance;  // TODO(holtgrew): Write into tags, also write number of SNPs/indel bases, number of sequencing errors
+        seqan::BamTagsDict tagsDict(record.tags);
+        setTagValue(tagsDict, "oR", toCString(refName));  // original reference name
+        setTagValue(tagsDict, "oH", hID + 1);             // original haplotype
+        setTagValue(tagsDict, "oP", infoRecord.beginPos);       // original position
+        setTagValue(tagsDict, "oS", infoRecord.isForward ? 'F' : 'R');  // original strand
     }
 };
 
@@ -307,7 +586,6 @@ public:
                             int rID, int hID)
     {
         std::stringstream ss;
-        (void)posMap;  // TODO(holtgrew): Use for projecting to reference.
 
         for (unsigned i = 0; i < 2 * fragmentIds.size(); i += 2)
         {
@@ -317,16 +595,19 @@ public:
                                             frag, methLevels);
             infos[i].rID = infos[i + 1].rID = rID;
             infos[i].hID = infos[i + 1].hID = hID;
+            // Build the alignment records themselves.
+            PairedEndRecordBuilder builder(infos[i], infos[i + 1], seqs[i], seqs[i + 1], ss,
+                                           quals[i], quals[i + 1], posMap, refName, refSeq,
+                                           rID, hID, fragmentIds[i / 2]);
+            builder.build(alignmentRecords[i], alignmentRecords[i + 1]);
+            // Set the query name.
             _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
             _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
-            if (buildAlignments)
-                _buildPairedEndAlignment(alignmentRecords[i], alignmentRecords[i + 1],
-                                         infos[i], infos[i + 1], seqs[i], seqs[i + 1],
-                                         ss, quals[i], quals[i + 1], refName, refSeq,
-                                         rID, fragmentIds[i / 2]);
+            _setId(alignmentRecords[i].qName, ss, fragmentIds[i / 2], 1, infos[i], true);
+            _setId(alignmentRecords[i + 1].qName, ss, fragmentIds[i / 2], 2, infos[i + 1], true);
         }
     }
-
+#if 0
     void _buildPairedEndAlignment(seqan::BamAlignmentRecord & recordL,
                                   seqan::BamAlignmentRecord & recordR,
                                   SequencingSimulationInfo & infoL,
@@ -413,7 +694,7 @@ public:
             recordL.tLen = -recordR.tLen;
         }
     }
-
+#endif  // #if 0
 
     void _simulateSingleEnd(seqan::Dna5String /*const*/ & seq,  // TODO(holtgrew): Const-holder issues in Gaps :|
                             PositionMap const & posMap,

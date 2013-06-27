@@ -15,10 +15,21 @@ ____READ SIMULATION___________________________________________________________
 Distributing fragments to 2 contigs (2 haplotypes each) ... OK
 
 Simulating Reads:
-  1 (allele 1) .. (443 fragments) OK
-  1 (allele 2) .. (467 fragments) OK
-  2 (allele 1) .. (41 fragments) OK
-  2 (allele 2) .. (49 fragments) OK
-  Done simulating reads.
+  1 (allele 1) /home/manuel/Development/seqan-trunk/sandbox/mason2/apps/mason2/genomic_variants.cpp:615 Assertion failed : !overlapsWithBreakpoint(svBeginPos, svEndPos) should be true but was 0
 
-Joining temporary files ... OK
+stack trace:
+  0          [0x50ce6f]  seqan::ClassTest::fail() + 0xe
+  1          [0x59cde8]  PositionMap::toSmallVarInterval(int, int) const + 0x54
+  2          [0x52137d]  PairedEndRecordBuilder::_fillAligned(seqan::BamAlignmentRecord&, SequencingSimulationInfo&, seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, seqan::String<char, seqan::Alloc<void> >&, int) + 0x45
+  3          [0x520dfa]  PairedEndRecordBuilder::build(seqan::BamAlignmentRecord&, seqan::BamAlignmentRecord&) + 0x260
+  4          [0x522359]  ReadSimulatorThread::_simulatePairedEnd(seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> > const&, PositionMap const&, seqan::String<char, seqan::Alloc<void> > const&, seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, int, int) + 0x419
+  5          [0x522bf8]  ReadSimulatorThread::run(seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, PositionMap const&, seqan::String<char, seqan::Alloc<void> > const&, seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, int, int) + 0x1f4
+  6          [0x50c434]  ../../../../../../seqan-trunk-build/debug/bin/mason_simulator()
+  7          [0x5240fa]  MasonSimulatorApp::_simulateReadsDoSimulation() + 0x36c
+  8          [0x524d89]  MasonSimulatorApp::_simulateReads() + 0x13b
+  9          [0x523d22]  MasonSimulatorApp::run() + 0x30
+ 10          [0x50c2a7]  main + 0x9c
+ 11    [0x7f457cace76d]  __libc_start_main + 0xed
+ 12          [0x50b939]  ../../../../../../seqan-trunk-build/debug/bin/mason_simulator()
+
+Aborted (core dumped)

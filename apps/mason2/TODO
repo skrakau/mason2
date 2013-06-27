@@ -20,6 +20,7 @@ IMPORTANT
  * color-space data
  * testing, FASTQ profiles etc.
  * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
+ * joining of FASTA files uses lexical comparison not natural number order
 
 LATER
 -----
