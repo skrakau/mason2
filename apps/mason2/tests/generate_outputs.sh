@@ -77,10 +77,12 @@ echo $?
 # With VCF variants, FASTA output, with SAM alignments, single-end
 echo "${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.left7.fa -oa simulator.out7.sam >simulator.out7.stdout 2>simulator.out7.stderr"
 ${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.left7.fa -oa simulator.out7.sam  >simulator.out7.stdout 2>simulator.out7.stderr
+echo $?
 
 # Without VCF variants, FASTA output, no SAM alignments, paired-end
 echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.right3.fa >simulator.out3.stdout 2>simulator.out3.stderr"
 ${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.right3.fa >simulator.out3.stdout 2>simulator.out3.stderr
+echo $?
 
 # Without VCF variants, FASTA output, no SAM alignments, single-end
 echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left4.fa -oa simulator.out4.sam >simulator.out4.stdout 2>simulator.out4.stderr"

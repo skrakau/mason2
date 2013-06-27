@@ -14,24 +14,8 @@ ____READ SIMULATION___________________________________________________________
 Distributing fragments to 2 contigs (1 haplotypes each) ... OK
 
 Simulating Reads:
-  1 (allele 1) 
+  1 (allele 1) .. (914 fragments) OK
+  2 (allele 1) .. (86 fragments) OK
+  Done simulating reads.
 
-stack trace:
-  0          [0x50ba18]  ../../../../../../seqan-trunk-build/debug/bin/mason_simulator()
-  1    [0x7fabd8f554a0]  /lib/x86_64-linux-gnu/libc.so.6(+0x364a0)
-  2          [0x536cee]  seqan::Iterator<seqan::String<char, seqan::Alloc<void> >, seqan::Tag<seqan::Standard_> const>::Type seqan::end<char, void>(seqan::String<char, seqan::Alloc<void> >&, seqan::Tag<seqan::Standard_> const&) + 0x10
-  3          [0x52863e]  void seqan::clear<char, seqan::Alloc<void> >(seqan::String<char, seqan::Alloc<void> >&) + 0x22
-  4          [0x5104ea]  seqan::clear(seqan::BamAlignmentRecord&) + 0x1c
-  5          [0x521126]  PairedEndRecordBuilder::_initialize(seqan::BamAlignmentRecord&, seqan::BamAlignmentRecord&) + 0x20
-  6          [0x520bc8]  PairedEndRecordBuilder::build(seqan::BamAlignmentRecord&, seqan::BamAlignmentRecord&) + 0x2e
-  7          [0x522359]  ReadSimulatorThread::_simulatePairedEnd(seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> > const&, PositionMap const&, seqan::String<char, seqan::Alloc<void> > const&, seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, int, int) + 0x419
-  8          [0x522bf8]  ReadSimulatorThread::run(seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, PositionMap const&, seqan::String<char, seqan::Alloc<void> > const&, seqan::String<seqan::SimpleType<unsigned char, seqan::Dna5_>, seqan::Alloc<void> >&, int, int) + 0x1f4
-  9          [0x50c434]  ../../../../../../seqan-trunk-build/debug/bin/mason_simulator()
- 10          [0x5240fa]  MasonSimulatorApp::_simulateReadsDoSimulation() + 0x36c
- 11          [0x524d89]  MasonSimulatorApp::_simulateReads() + 0x13b
- 12          [0x523d22]  MasonSimulatorApp::run() + 0x30
- 13          [0x50c2a7]  main + 0x9c
- 14    [0x7fabd8f4076d]  __libc_start_main + 0xed
- 15          [0x50b939]  ../../../../../../seqan-trunk-build/debug/bin/mason_simulator()
-
-Segmentation fault (core dumped)
+Joining temporary files ... OK
