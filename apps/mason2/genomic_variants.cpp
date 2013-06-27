@@ -127,6 +127,11 @@ int VariantMaterializer::_runImpl(
                                   *variants, smallLvlsPtr, haplotypeId) != 0)
         return 1;
 
+    // std::sort(breakpoints.begin(), breakpoints.end());
+    // std::cout << "SV Breakpoints\n";
+    // for (unsigned i = 0; i < breakpoints.size(); ++i)
+    //     std::cout << "  " << breakpoints[i] << "\n";
+
     // Copy out SV breakpoints.
     posMap->svBreakpoints.insert(breakpoints.begin(), breakpoints.end());
 
@@ -660,6 +665,8 @@ void PositionMap::reinit(TJournalEntries const & journal)
     // TODO(holtgrew): Better API support for IntervalTree?
     svIntervalTree = TIntervalTree();
     svBreakpoints.clear();
+    clear(refGapAnchors);
+    clear(smallVarGapAnchors);
 
     // Convert the journal to two gaps.
     //
@@ -679,6 +686,7 @@ void PositionMap::reinit(TJournalEntries const & journal)
     unsigned lastRefPos = seqan::maxValue<unsigned>();  // Previous position from reference.
     for (; it != end(journal, seqan::Standard()); ++it)
     {
+        // std::cerr << *it << "\n";
         SEQAN_ASSERT_NEQ(it->segmentSource, seqan::SOURCE_NULL);
         if (it->segmentSource == seqan::SOURCE_ORIGINAL)
         {
@@ -726,8 +734,13 @@ void PositionMap::reinit(TJournalEntries const & journal)
     // std::cerr << "--> done\n";
 
     // typedef seqan::Gaps<seqan::CharString, seqan::AnchorGaps<TGapAnchors> > TGaps2;
-    // seqan::CharString seqH = "XXXXXXXXXXXXXXXXXXXXXXXX";
-    // seqan::CharString seqV = "XXXXXXXXXXXXXXXXXXXXXXXX";
+    // seqan::CharString seqH;
+    // seqan::CharString seqV;
+    // for (unsigned i = 0; i < 1000; ++i)
+    // {
+    //     appendValue(seqH, 'X');
+    //     appendValue(seqV, 'X');
+    // }
     // TGaps2 gapsH(seqH, refGapAnchors);
     // TGaps2 gapsV(seqV, smallVarGapAnchors);
 

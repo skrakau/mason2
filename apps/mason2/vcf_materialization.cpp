@@ -238,6 +238,16 @@ bool VcfMaterializer::_materializeNext(seqan::Dna5String & seq, MethylationLevel
             _loadLevels(currRID);
             swap(*levels, currentLevels);
         }
+
+        // Build identity PositionMap.
+        TJournalEntries journal;
+        reinit(journal, length(seq));
+        posMap.reinit(journal);
+        GenomicInterval gi(0, length(seq), 0, length(seq));
+        seqan::String<PositionMap::TInterval> intervals;
+        appendValue(intervals, PositionMap::TInterval(gi.svBeginPos, gi.svEndPos, gi));
+        createIntervalTree(posMap.svIntervalTree, intervals);
+
         return true;
     }
 
