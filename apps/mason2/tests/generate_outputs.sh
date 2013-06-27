@@ -74,6 +74,10 @@ echo "${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.lef
 ${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.left2.fq -or simulator.right2.fq -oa simulator.out2.sam >simulator.out2.stdout 2>simulator.out2.stderr
 echo $?
 
+# With VCF variants, FASTA output, with SAM alignments, single-end
+echo "${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.left7.fa -oa simulator.out7.sam >simulator.out7.stdout 2>simulator.out7.stderr"
+${SIMULATOR} -n 1000 -ir random.fasta -iv random_var1.vcf -o simulator.left7.fa -oa simulator.out7.sam  >simulator.out7.stdout 2>simulator.out7.stderr
+
 # Without VCF variants, FASTA output, no SAM alignments, paired-end
 echo "${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.right3.fa >simulator.out3.stdout 2>simulator.out3.stderr"
 ${SIMULATOR} -n 1000 -ir random.fasta -o simulator.left3.fa -or simulator.right3.fa >simulator.out3.stdout 2>simulator.out3.stderr
@@ -88,7 +92,7 @@ echo "${SIMULATOR} -n 1000 -ir random.fasta --meth-fasta-in random_meth1.fasta -
 ${SIMULATOR} -n 1000 -ir random.fasta --meth-fasta-in random_meth1.fasta --methylation-levels --enable-bs-seq -o simulator.left5.fq -or simulator.right5.fq >simulator.out5.stdout 2>simulator.out5.stderr
 echo $?
 
-# Witho VCF variants, FASTQ output, no SAM alignment, paired-end, BS-seq.
+# Without VCF variants, FASTQ output, no SAM alignment, paired-end, BS-seq.
 echo "${SIMULATOR} -n 1000 -ir random.fasta --meth-fasta-in random_meth1.fasta -iv random_var1.vcf --methylation-levels --enable-bs-seq -o simulator.left6.fq -or simulator.right6.fq >simulator.out6.stdout 2>simulator.out6.stderr"
 ${SIMULATOR} -n 1000 -ir random.fasta --meth-fasta-in random_meth1.fasta -iv random_var1.vcf --methylation-levels --enable-bs-seq -o simulator.left6.fq -or simulator.right6.fq >simulator.out6.stdout 2>simulator.out6.stderr
 echo $?
