@@ -651,7 +651,6 @@ struct MasonSimulatorOptions
     int numThreads;
     // Number of reads/pairs to simulate in one chunk
     int chunkSize;
-    // TODO(holtgrew): Make configurable from the command line.
 
     // Number of reads/pairs to simulate.
     int numFragments;

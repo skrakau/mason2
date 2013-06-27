@@ -1076,6 +1076,11 @@ void MasonSimulatorOptions::addOptions(seqan::ArgumentParser & parser) const
     setMinValue(parser, "num-threads", "1");
     setDefaultValue(parser, "num-threads", "1");
 
+    addOption(parser, seqan::ArgParseOption("", "chunk-size", "Number of fragments to simulate in one batch.",
+                                            seqan::ArgParseOption::INTEGER, "NUM"));
+    setMinValue(parser, "chunk-size", "65536");
+    setDefaultValue(parser, "chunk-size", "65536");
+
     addOption(parser, seqan::ArgParseOption("n", "num-fragments", "Number of reads/pairs to simulate.",
                                             seqan::ArgParseOption::INTEGER, "NUM"));
     setRequired(parser, "num-fragments");
@@ -1165,6 +1170,7 @@ void MasonSimulatorOptions::getOptionValues(seqan::ArgumentParser const & parser
     getOptionValue(seed, parser, "seed");
     getOptionValue(seedSpacing, parser, "seed-spacing");
     getOptionValue(numThreads, parser, "num-threads");
+    getOptionValue(chunkSize, parser, "chunk-size");
     getOptionValue(numFragments, parser, "num-fragments");
     getOptionValue(methFastaInFile, parser, "meth-fasta-in");
     getOptionValue(outFileNameLeft, parser, "out");
@@ -1212,6 +1218,7 @@ void MasonSimulatorOptions::print(std::ostream & out) const
         << "NUM FRAGMENTS\t" << numFragments << "\n"
         << "\n"
         << "NUM THREADS\t" << numThreads << "\n"
+        << "CHUNK SIZE\t" << chunkSize << "\n"
         << "\n"
         << "METHYLATION FASTA IN\t" << methFastaInFile << "\n"
         << "OUTPUT FILE LEFT\t" << outFileNameLeft << "\n"
