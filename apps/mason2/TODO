@@ -6,26 +6,24 @@ URGENT
 
 mason_simulator
 
- * projection of alignments to the reference sequence.
-   * realignment of single-end
-   * add test for single-end with SVs
-   * all of paired-end
  * FASTQ input from a typical run for quality and N-patterns, cycle through data
    - This requires bulk-simulation of reads to circumvent possible problems.
+
+mason_splicer
+ * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
 
 IMPORTANT
 ---------
 
  * use heap/tournament tree for merging in FastaJoiner
- * color-space data
- * testing, FASTQ profiles etc.
- * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
+ * testing, FASTQ profiles etc., methylation pattern check
  * joining of FASTA files uses lexical comparison not natural number order
+ * exceptions instead of return codes
 
 LATER
 -----
 
- * exceptions instead of return codes
+ * color-space data
  * add simulation of adaptors/barcodes
  * PacBio read error models?
  * different quality scales

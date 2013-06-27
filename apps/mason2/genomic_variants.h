@@ -359,7 +359,6 @@ public:
 // Note that the class assumes that all variants come from the same contig and haplotype.
 
 // TODO(holtgrew): Rename to ContigMaterializer.
-// TODO(holtgrew): Add translation of coordinates.
 
 class VariantMaterializer
 {

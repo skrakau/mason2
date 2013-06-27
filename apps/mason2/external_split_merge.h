@@ -60,6 +60,7 @@
 
 inline bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
                                  seqan::BamAlignmentRecord const & rhs);
+inline int strnum_cmp(const char *a, const char *b);
 
 // ============================================================================
 // Tags, Classes, Enums
@@ -323,7 +324,7 @@ int FastxJoiner<TTag>::get(seqan::CharString & id, seqan::CharString & seq, seqa
     {
         if (!active[i])
             continue;
-        if (idx == seqan::maxValue<unsigned>() || ids[i] < ids[idx])
+        if (idx == seqan::maxValue<unsigned>() || strnum_cmp(toCString(ids[i]), toCString(ids[idx])) < 0)
             idx = i;
     }
     if (idx == seqan::maxValue<unsigned>())
@@ -343,13 +344,58 @@ int FastxJoiner<TTag>::get(seqan::CharString & id, seqan::CharString & seq, seqa
 // Function ltBamAlignmentRecord()
 // ----------------------------------------------------------------------------
 
+// Original comparison function for strings by Heng Li from samtools.
+
+/* The MIT License
+
+   Copyright (c) 2008-2010 Genome Research Ltd (GRL).
+
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
+   distribute, sublicense, and/or sell copies of the Software, and to
+   permit persons to whom the Software is furnished to do so, subject to
+   the following conditions:
+
+   The above copyright notice and this permission notice shall be
+   included in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+   BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+*/
+
+inline int strnum_cmp(const char *a, const char *b)
+{
+	char *pa, *pb;
+	pa = (char*)a; pb = (char*)b;
+	while (*pa && *pb) {
+		if (isdigit(*pa) && isdigit(*pb)) {
+			long ai, bi;
+			ai = strtol(pa, &pa, 10);
+			bi = strtol(pb, &pb, 10);
+			if (ai != bi) return ai<bi? -1 : ai>bi? 1 : 0;
+		} else {
+			if (*pa != *pb) break;
+			++pa; ++pb;
+		}
+	}
+	if (*pa == *pb)
+		return (pa-a) < (pb-b)? -1 : (pa-a) > (pb-b)? 1 : 0;
+	return *pa<*pb? -1 : *pa>*pb? 1 : 0;
+}
+
 inline bool ltBamAlignmentRecord(seqan::BamAlignmentRecord const & lhs,
                                  seqan::BamAlignmentRecord const & rhs)
 {
-    seqan::Lexical<> cmp(lhs.qName, rhs.qName);
-    if (isLess(cmp) || (isEqual(cmp) && hasFlagFirst(lhs)))
-        return true;
-    return false;
+    int res = strnum_cmp(toCString(lhs.qName), toCString(rhs.qName));
+    return (res < 0) || (res == 0 && hasFlagFirst(lhs));
 }
 
 #endif  // #ifndef SANDBOX_MASON2_APPS_MASON2_EXTERNAL_SPLIT_MERGE_H_
