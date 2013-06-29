@@ -48,6 +48,13 @@
 #include "external_split_merge.h"
 
 // ==========================================================================
+// Forwards
+// ==========================================================================
+
+template <typename TMDString, typename TGaps1, typename TGaps2>
+inline void getMDString2(TMDString &md, TGaps1 &gaps1, TGaps2 &gaps2);
+
+// ==========================================================================
 // Classes
 // ==========================================================================
 
@@ -218,7 +225,7 @@ public:
         editDistance /= -1000;  // score to edit distance
 
         getCigarString(record.cigar, gapsContig, gapsRead, seqan::maxValue<int>());
-        getMDString(mdString, gapsContig, gapsRead);
+        getMDString2(mdString, gapsContig, gapsRead);
     }
 
     // Fill the tags dict.
@@ -503,7 +510,7 @@ public:
         editDistance /= -1000;  // score to edit distance
 
         getCigarString(record.cigar, gapsContig, gapsRead, seqan::maxValue<int>());
-        getMDString(mdString, gapsContig, gapsRead);
+        getMDString2(mdString, gapsContig, gapsRead);
     }
 
     // Fill the tags dict.
@@ -1087,6 +1094,79 @@ parseCommandLine(MasonSimulatorOptions & options, int argc, char const ** argv)
     options.getOptionValues(parser);
 
     return seqan::ArgumentParser::PARSE_OK;
+}
+
+// ----------------------------------------------------------------------------
+// getMDString2()
+// ----------------------------------------------------------------------------
+
+template <
+    typename TMDString,
+    typename TGaps1,
+    typename TGaps2>
+inline void
+getMDString2(
+    TMDString &md,
+    TGaps1 &gaps1,
+    TGaps2 &gaps2)
+{
+    typedef typename seqan::Value<TMDString>::Type TMDChar;
+	typename seqan::Iterator<TGaps1>::Type it1 = begin(gaps1);
+	typename seqan::Iterator<TGaps2>::Type it2 = begin(gaps2);
+    typedef typename seqan::Value<typename seqan::Source<TGaps1>::Type>::Type TValue1;
+    typedef typename seqan::Value<typename seqan::Source<TGaps2>::Type>::Type TValue2;
+	char op, lastOp = ' ';
+	unsigned numOps = 0;
+
+    clear(md);
+    for (; !atEnd(it1) && !atEnd(it2); goNext(it1), goNext(it2))
+    {
+        if (isGap(it1)) continue;
+        if (isGap(it2))
+        {
+            op = 'D';
+        } 
+        else
+        {
+            TValue1 x1 = *it1;
+            TValue1 x2 = *it2;
+            op = (x1 == x2)? 'M': 'R';
+        }
+        
+        // append match run
+        if (lastOp != op)
+        {
+            if (lastOp == 'M')
+            {
+                std::stringstream num;
+                num << numOps;
+                append(md, num.str());
+            }
+            numOps = 0;
+            lastOp = op;
+        }
+
+        // append deleted/replaced reference character
+        if (op != 'M')
+        {
+            // add ^ from non-deletion to deletion
+            if (op == 'D' && lastOp != 'D')
+                appendValue(md, '^');
+            // add 0 from deletion to replacement
+            if (op == 'R' && lastOp == 'D')
+                appendValue(md, '0');
+            appendValue(md, seqan::convert<TMDChar>(*it1));
+        }
+
+        ++numOps;
+    }
+    SEQAN_ASSERT_EQ(atEnd(it1), atEnd(it2));
+    if (lastOp == 'M')
+    {
+        std::stringstream num;
+        num << numOps;
+        append(md, num.str());
+    }
 }
 
 // --------------------------------------------------------------------------
