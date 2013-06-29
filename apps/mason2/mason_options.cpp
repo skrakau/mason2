@@ -1240,7 +1240,7 @@ void MasonSimulatorOptions::print(std::ostream & out) const
 }
 
 // ----------------------------------------------------------------------------
-// Function MasonSimulatorOptions::addOptions()
+// Function MasonMaterializerOptions::addOptions()
 // ----------------------------------------------------------------------------
 
 void MasonMaterializerOptions::addOptions(seqan::ArgumentParser & parser) const
@@ -1342,6 +1342,111 @@ void MasonMaterializerOptions::print(std::ostream & out) const
     matOptions.print(out);
     out << "\n";
     methOptions.print(out);
+    out << "\n";
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSplicingOptions::addOptions()
+// ----------------------------------------------------------------------------
+
+void MasonSplicingOptions::addOptions(seqan::ArgumentParser & parser) const
+{
+    // Add top-level options.
+
+    addOption(parser, seqan::ArgParseOption("q", "quiet", "Low verbosity."));
+    addOption(parser, seqan::ArgParseOption("v", "verbose", "Higher verbosity."));
+    addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Highest verbosity."));
+
+    addOption(parser, seqan::ArgParseOption("", "seed", "Seed for random number generation.",
+                                            seqan::ArgParseOption::INTEGER, "Int"));
+    setDefaultValue(parser, "seed", "0");
+
+    addOption(parser, seqan::ArgParseOption("o", "out", "Output of materialized contigs.",
+                                            seqan::ArgParseOption::OUTPUTFILE, "OUT"));
+    setRequired(parser, "out");
+    setValidValues(parser, "out", "fa fasta");
+
+    addOption(parser, seqan::ArgParseOption("", "haplotype-name-sep",
+                                            "String separating contig name from haplotype number.",
+                                            seqan::ArgParseOption::STRING, "SEP"));
+    setDefaultValue(parser, "haplotype-name-sep", "/");
+
+    addOption(parser, seqan::ArgParseOption("ig", "in-gff", "Path to input GFF or GTF file.",
+                                            seqan::ArgParseOption::INPUTFILE, "IN.gff"));
+    setValidValues(parser, "in-gff", "gff gtf");
+    setRequired(parser, "in-gff");
+
+    addOption(parser, seqan::ArgParseOption("", "gff-type", "Splicing will filter to the records that have this type.",
+                                            seqan::ArgParseOption::INPUTFILE, "TYPE"));
+    setDefaultValue(parser, "gff-type", "exon");
+
+    addOption(parser, seqan::ArgParseOption("", "gff-group-by", "Assign features to their parent using the tag "
+                                            "with this name.", seqan::ArgParseOption::INPUTFILE, "KEY"));
+    setDefaultValue(parser, "gff-group-by", "Parent");
+
+    // Add options of the component options.
+    matOptions.addOptions(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSplicingOptions::addTextSections()
+// ----------------------------------------------------------------------------
+
+void MasonSplicingOptions::addTextSections(seqan::ArgumentParser & parser) const
+{
+    // Add text sections of the component options.
+    matOptions.addTextSections(parser);
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSplicingOptions::getOptionValues()
+// ----------------------------------------------------------------------------
+
+void MasonSplicingOptions::getOptionValues(seqan::ArgumentParser const & parser)
+{
+    // Get top-level options.
+    if (isSet(parser, "quiet"))
+        verbosity = 0;
+    if (isSet(parser, "verbose"))
+        verbosity = 2;
+    if (isSet(parser, "very-verbose"))
+        verbosity = 3;
+    getOptionValue(seed, parser, "seed");
+    getOptionValue(outputFileName, parser, "out");
+    getOptionValue(haplotypeNameSep, parser, "haplotype-name-sep");
+    getOptionValue(inputGffFile, parser, "in-gff");
+    getOptionValue(gffType, parser, "gff-type");
+    getOptionValue(gffGroupBy, parser, "gff-group-by");
+
+    // Get options for the other components that we use.
+    matOptions.getOptionValues(parser);
+
+    // Copy in the verbosity flag into the component options.
+    matOptions.verbosity = verbosity;
+}
+
+// ----------------------------------------------------------------------------
+// Function MasonSplicingOptions::print()
+// ----------------------------------------------------------------------------
+
+void MasonSplicingOptions::print(std::ostream & out) const
+{
+    out << "MASON SPLICING OPTIONS\n"
+        << "-----------------------\n"
+        << "\n"
+        << "VERBOSITY               \t" << getVerbosityStr(verbosity) << "\n"
+        << "\n"
+        << "SEED                    \t" << seed << "\n"
+        << "\n"
+        << "OUTPUT FILE             \t" << outputFileName << "\n"
+        << "\n"
+        << "HAPLOTYPE NAME SEP      \t" << haplotypeNameSep << "\n"
+        << "\n"
+        << "INPUT GFF FILE          \t" << inputGffFile << "\n"
+        << "GFF TYPE                \t" << gffType << "\n"
+        << "GFF GROUP BY            \t" << gffGroupBy << "\n"
+        << "\n";
+    matOptions.print(out);
     out << "\n";
 }
 

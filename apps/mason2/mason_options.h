@@ -741,6 +741,51 @@ struct MasonMaterializerOptions
 };
 
 // ----------------------------------------------------------------------------
+// Class MasonSplicingOptions
+// ----------------------------------------------------------------------------
+
+// Configuration for the program mason_materializer.
+
+struct MasonSplicingOptions
+{
+    // Verbosity: 0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+
+    // Seed to use in RNG.
+    int seed;
+
+    // Options for the materializer.
+    MaterializerOptions matOptions;
+
+    // Path to input GFF/GTF file.
+    seqan::CharString inputGffFile;
+    // Type of the annotations to splice.
+    seqan::CharString gffType;
+    // Name of the group-by column.
+    seqan::CharString gffGroupBy;
+
+    // Path to output file.
+    seqan::CharString outputFileName;
+    // Separator between contig names and haplotype number.
+    seqan::CharString haplotypeNameSep;
+
+    MasonSplicingOptions() : verbosity(1), seed(0)
+    {}
+
+    // Add options to the argument parser.
+    void addOptions(seqan::ArgumentParser & parser) const;
+
+    // Add possible text sections to the argument parser.
+    void addTextSections(seqan::ArgumentParser & parser) const;
+
+    // Get option values from the argument parser.
+    void getOptionValues(seqan::ArgumentParser const & parser);
+
+    // Print settings to out.
+    void print(std::ostream & out) const;
+};
+
+// ----------------------------------------------------------------------------
 // Class MasonFragmentSequencingOptions
 // ----------------------------------------------------------------------------
 

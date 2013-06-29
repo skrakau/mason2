@@ -81,6 +81,9 @@ add_executable (mason_materializer mason_materializer.cpp)
 # The end-to-end read simulator includes materialization and fragment sampling.
 add_executable (mason_simulator mason_simulator.cpp)
 
+# Simulation splicing given a reference, GFF/GTF file, and possibly VCF for variants.
+add_executable (mason_splicing mason_splicing.cpp)
+
 # Tests for some of the library functionality.
 add_executable (mason_tests mason_tests.cpp)
 
@@ -91,6 +94,7 @@ target_link_libraries (mason_frag_sequencing ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_variator ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_materializer ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_simulator ${SEQAN_LIBRARIES} mason_sim)
+target_link_libraries (mason_splicing ${SEQAN_LIBRARIES} mason_sim)
 target_link_libraries (mason_tests ${SEQAN_LIBRARIES} mason_sim)
 
 # ----------------------------------------------------------------------------

@@ -10,11 +10,13 @@ mason_simulator
    - This requires bulk-simulation of reads to circumvent possible problems.
 
 mason_splicer
+
  * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
 
 IMPORTANT
 ---------
 
+ * compress temporary files (allow to switch off) so memory usage is not as catastrophic any more :)
  * use heap/tournament tree for merging in FastaJoiner
  * testing, FASTQ profiles etc., methylation pattern check
  * joining of FASTA files uses lexical comparison not natural number order
@@ -23,8 +25,6 @@ IMPORTANT
 LATER
 -----
 
- * color-space data
+ * biases in mismatch errors from input, trained from real-world data
  * add simulation of adaptors/barcodes
- * PacBio read error models?
- * different quality scales
  * more robust parsing of VCF for variant import
