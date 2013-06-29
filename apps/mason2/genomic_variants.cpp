@@ -574,12 +574,17 @@ int VariantMaterializer::_materializeLargeVariants(
         appendValue(intervals, GenomicInterval(currentPos, length(seq), lastPos, length(contig),
                                                '+', GenomicInterval::NORMAL));
 
-    // Build the interval tree of the positionMap.
-    seqan::String<PositionMap::TInterval> svIntervals;
+    // Build the interval trees of the positionMap.
+    seqan::String<PositionMap::TInterval> svIntervals, svIntervalsSTL;
     for (unsigned i = 0; i < length(intervals); ++i)
+    {
         appendValue(svIntervals, PositionMap::TInterval(
                 intervals[i].svBeginPos, intervals[i].svEndPos, intervals[i]));
+        appendValue(svIntervalsSTL, PositionMap::TInterval(
+                intervals[i].smallVarBeginPos, intervals[i].smallVarEndPos, intervals[i]));
+    }
     createIntervalTree(positionMap.svIntervalTree, svIntervals);
+    createIntervalTree(positionMap.svIntervalTreeSTL, svIntervalsSTL);
         
     return 0;
 }
@@ -602,6 +607,19 @@ GenomicInterval PositionMap::getGenomicInterval(int svPos) const
 {
     seqan::String<GenomicInterval> intervals;
     findIntervals(svIntervalTree, svPos, intervals);
+    SEQAN_ASSERT_EQ(length(intervals), 1u);
+    return intervals[0];
+}
+
+// --------------------------------------------------------------------------
+// PositionMap::getGenomicIntervalSmallVarPos()
+// --------------------------------------------------------------------------
+
+// Returns the GenomicInterval on the sequence using a position on the small var reference.
+GenomicInterval PositionMap::getGenomicIntervalSmallVarPos(int smallVarPos) const
+{
+    seqan::String<GenomicInterval> intervals;
+    findIntervals(svIntervalTreeSTL, smallVarPos, intervals);
     SEQAN_ASSERT_EQ(length(intervals), 1u);
     return intervals[0];
 }
@@ -636,6 +654,52 @@ std::pair<int, int> PositionMap::toSmallVarInterval(int svBeginPos, int svEndPos
 }
 
 // --------------------------------------------------------------------------
+// Function PositionMap::smallVarToLargeVarInterval()
+// --------------------------------------------------------------------------
+
+std::pair<int, int> PositionMap::smallVarToLargeVarInterval(int beginPos, int endPos) const
+{
+    // SEQAN_ASSERT(!overlapsWithBreakpoint(svBeginPos, svEndPos));
+    GenomicInterval gi = getGenomicIntervalSmallVarPos(beginPos);
+    SEQAN_ASSERT_NEQ(gi.kind, GenomicInterval::INSERTED);
+
+    if (gi.kind != GenomicInterval::INVERTED)
+    {
+        // forward
+        return std::make_pair(gi.svBeginPos + (beginPos - gi.smallVarBeginPos),
+                              gi.svBeginPos + (endPos - gi.smallVarBeginPos));
+    }
+    else
+    {
+        // reverse
+        return std::make_pair(gi.svBeginPos + (gi.svEndPos - beginPos),
+                              gi.svBeginPos + (gi.svEndPos - endPos));
+    }
+
+    return std::make_pair(-1, -1);  // cannot reach here
+}
+
+// --------------------------------------------------------------------------
+// Function PositionMap::orignalToSmallVarInterval()
+// --------------------------------------------------------------------------
+
+std::pair<int, int> PositionMap::originalToSmallVarInterval(int beginPos, int endPos) const
+{
+    // TODO(holtgrew): Project to the left at the end.
+
+    // Get anchor gaps objects from anchors.
+    TGaps refGaps(seqan::Nothing(), refGapAnchors);
+    TGaps smallVarGaps(seqan::Nothing(), smallVarGapAnchors);
+
+    // Translate begin and end position.
+    int beginPos2 = toViewPosition(refGaps, beginPos);
+    int beginPos3 = toSourcePosition(smallVarGaps, beginPos2);
+    int endPos2 = toViewPosition(refGaps, endPos);
+    int endPos3 = toSourcePosition(smallVarGaps, endPos2);
+    return std::make_pair(beginPos3, endPos3);
+}
+
+// --------------------------------------------------------------------------
 // Function PositionMap::toOriginalInterval()
 // --------------------------------------------------------------------------
 
@@ -664,6 +728,7 @@ void PositionMap::reinit(TJournalEntries const & journal)
     // Reset the interval tree and breakpoints.
     // TODO(holtgrew): Better API support for IntervalTree?
     svIntervalTree = TIntervalTree();
+    svIntervalTreeSTL = TIntervalTree();
     svBreakpoints.clear();
     clear(refGapAnchors);
     clear(smallVarGapAnchors);

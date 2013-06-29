@@ -11,7 +11,7 @@ mason_simulator
 
 mason_splicer
 
- * splicing given GFF/GTF file, use algorithm scaffold from ngs_roi
+ * test splicing on dmel, check by blasting against reference
 
 IMPORTANT
 ---------

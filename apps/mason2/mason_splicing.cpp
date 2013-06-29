@@ -44,6 +44,7 @@
 #include <seqan/seq_io.h>
 #include <seqan/sequence.h>
 #include <seqan/vcf_io.h>
+#include <seqan/gff_io.h>
 
 #include "vcf_materialization.h"
 #include "mason_options.h"
@@ -52,6 +53,41 @@
 // ==========================================================================
 // Classes
 // ==========================================================================
+
+// --------------------------------------------------------------------------
+// Class SplicingInstruction
+// --------------------------------------------------------------------------
+
+// Represents one exon.
+
+struct SplicingInstruction
+{
+    // ID of the transcript that this instruction belongs to.
+    int transcriptID;
+    // Begin and end position of the exon.
+    int beginPos, endPos;
+    // The strand of the instruction '-' or '+'.
+    char strand;
+
+    SplicingInstruction() : transcriptID(-1), beginPos(-1), endPos(-1), strand('.')
+    {}
+
+    SplicingInstruction(int transcriptID, int beginPos, int endPos, char strand) :
+            transcriptID(transcriptID), beginPos(beginPos), endPos(endPos), strand(strand)
+    {}
+
+    bool operator<(SplicingInstruction const & other) const
+    {
+        return std::make_pair(transcriptID, std::make_pair(beginPos, std::make_pair(endPos, strand))) <
+                std::make_pair(other.transcriptID,
+                               std::make_pair(other.beginPos, std::make_pair(other.endPos, other.strand)));
+    }
+};
+
+bool differentTranscript(SplicingInstruction const & lhs, SplicingInstruction const & rhs)
+{
+    return lhs.transcriptID != rhs.transcriptID;
+}
 
 // --------------------------------------------------------------------------
 // Class MasonSplicingApp
@@ -68,6 +104,9 @@ public:
 
     // Materialization of VCF.
     VcfMaterializer vcfMat;
+
+    // Input GFF/GTF stream.
+    seqan::GffStream gffStream;
 
     // Output sequence stream.
     seqan::SequenceStream outStream;
@@ -91,6 +130,10 @@ public:
             open(outStream, toCString(options.outputFileName), seqan::SequenceStream::WRITE);
             if (!isGood(outStream))
                 throw MasonIOException("Could not open output file.");
+
+            open(gffStream, toCString(options.inputGffFile));
+            if (!isGood(gffStream))
+                throw MasonIOException("Could not open GFF/GTF file.");
         }
         catch (MasonIOException e)
         {
@@ -103,26 +146,228 @@ public:
         std::cerr << "\n__COMPUTING TRANSCRIPTS______________________________________________________\n"
                   << "\n";
 
-        // The identifiers of the just materialized data.
-        int rID = 0, hID = 0;
+        // Read first GFF record.
+        seqan::GffRecord record;
+        _readFirstRecord(record);
+        if (record.rID == seqan::maxValue<int>())
+            return 0;  // at end, could not read any, done
+
+        // Transcript names.
+        typedef seqan::StringSet<seqan::CharString> TNameStore;
+        typedef seqan::NameStoreCache<TNameStore> TNameStoreCache;
+        TNameStore transcriptNames;
+        TNameStoreCache transcriptNamesCache(transcriptNames);
+
+        // The splicing instructions for the current contig.
+        std::vector<SplicingInstruction> splicingInstructions;
+
+        // Materialized sequence.
         seqan::Dna5String seq;
-        std::cerr << "Splicing";
-        while (vcfMat.materializeNext(seq, rID, hID))
+        // Tanscript ids, used as a buffer below.
+        seqan::String<unsigned> transcriptIDs;
+
+        // Read GFF/GTF file contig by contig (must be sorted by reference name).  For each contig, we all recors,
+        // create simulation instructions and then build the transcripts for each haplotype.
+        while (record.rID != seqan::maxValue<int>())  // sentinel, at end
         {
-            std::stringstream ssName;
-            std::cerr << "  " << sequenceName(vcfMat.faiIndex, rID) << " (allele " << (hID + 1) << ") ";
+            seqan::CharString refName = record.ref;
+            std::cerr << "Splicing for " << refName << " ...";
             
-            if (writeRecord(outStream, ssName.str(), seq) != 0)
+            // Read GFF records for this contig.
+            seqan::GffRecord firstGffRecord = record;
+            while (record.rID == firstGffRecord.rID)
             {
-                std::cerr << "ERROR: Could not write materialized sequence to output.\n";
-                return 1;
+                if (empty(options.gffType) || (record.type == options.gffType))
+                {
+                    // Make transcript names known to the record.
+                    _appendTranscriptNames(transcriptIDs, transcriptNames, transcriptNamesCache, record);
+                    // Add the splicing instructions for this record to the list for this contig.
+                    for (unsigned i = 0; i < length(transcriptIDs); ++i)
+                        splicingInstructions.push_back(SplicingInstruction(transcriptIDs[i], record.beginPos,
+                                                                           record.endPos, record.strand));
+                }
+
+                if (atEnd(gffStream))
+                {
+                    record.rID = seqan::maxValue<int>();
+                    break;
+                }
+                if (readRecord(record, gffStream) != 0)
+                    throw MasonIOException("Could not read record from GFF/GTF file");
             }
+
+            // ---------------------------------------------------------------
+            // Process the splicing instructions.
+            // ---------------------------------------------------------------
+
+            // First, sort them.
+            std::sort(splicingInstructions.begin(), splicingInstructions.end());
+
+            // Materialize all haplotypes of this contig
+            int rID = 0, hID = 0;  // reference and haplotype id
+            // Get index of the gff record's reference in the VCF file.
+            unsigned idx = 0;
+            if (!getIdByName(vcfMat.faiIndex, refName, idx))
+            {
+                std::stringstream ss;
+                ss << "Reference from GFF file " << refName << " unknown in FASTA/FAI file.";
+                throw MasonIOException(ss.str());
+            }
+            rID = idx;
+
+            vcfMat.currRID = rID - 1;
+            while (vcfMat.materializeNext(seq, rID, hID))
+            {
+                std::cerr << " (allele " << (hID + 1) << ")";
+                if (rID != (int)idx)
+                    break;  // no more haplotypes for this reference
+                _performSplicing(splicingInstructions, seq, transcriptNames, hID, vcfMat);
+            }
+
+            std::cerr << " DONE.\n";
+
+            // ---------------------------------------------------------------
+            // Handle contig switching.
+            // ---------------------------------------------------------------
+
+            // Check that the input GFF file is clustered (weaker than sorted) by reference name.
+            if (record.rID < firstGffRecord.rID)
+                throw MasonIOException("GFF file not sorted or clustered by reference.");
+            // Reset transcript names and cache.
+            clear(transcriptNames);
+            refresh(transcriptNamesCache);
+            // Flush splicing instructions.
+            splicingInstructions.clear();
         }
-        std::cerr << " DONE\n";
 
         std::cerr << "\nDone splicing FASTA.\n";
 
         return 0;
+    }
+
+    // Perform splicing of transcripts.
+    void _performSplicing(std::vector<SplicingInstruction> const & instructions,
+                          seqan::Dna5String const & seq,
+                          seqan::StringSet<seqan::CharString> const & tNames,
+                          int hID,  // -1 in case of no variants
+                          VcfMaterializer const & vcfMat)
+    {
+        typedef std::vector<SplicingInstruction>::const_iterator TIter;
+        TIter it = instructions.begin();
+        TIter itEnd = std::adjacent_find(it, instructions.end(), differentTranscript);
+        if (itEnd != instructions.end())
+            ++itEnd;
+
+        seqan::Dna5String transcript, buffer;
+        
+        do
+        {
+            clear(transcript);
+
+            bool onBreakpoint = false;
+            int tID = it->transcriptID;
+            for (; it != itEnd; ++it)
+            {
+                // Convert from original coordinate system to coordinate system with SVs.
+                std::pair<int, int> smallVarInt = vcfMat.posMap.originalToSmallVarInterval(
+                        it->beginPos, it->endPos);
+                GenomicInterval gi = vcfMat.posMap.getGenomicIntervalSmallVarPos(smallVarInt.first);
+                SEQAN_ASSERT_GT(smallVarInt.second, 0);
+                GenomicInterval giR = vcfMat.posMap.getGenomicIntervalSmallVarPos(smallVarInt.second - 1);
+                bool overlapsWithBreakpoint = (gi != giR);
+                std::pair<int, int> largeVarInt = vcfMat.posMap.smallVarToLargeVarInterval(
+                        smallVarInt.first, smallVarInt.second);
+
+                // Transcripts with exons overlapping breakpoints are not written out.
+                if (overlapsWithBreakpoint)
+                {
+                    onBreakpoint = true;
+                    break;
+                }
+
+                // Append buffer to transcript in original state or reverse-complemented.
+                buffer = infix(seq, largeVarInt.first, largeVarInt.second);
+                if (it->strand != gi.strand)
+                    reverseComplement(buffer);
+                append(transcript, buffer);
+            }
+
+            if (onBreakpoint)
+            {
+                std::cerr << "\nWARNING: Exon lies on breakpoint!\n";
+                while (it != instructions.end() && it->transcriptID == tID)
+                    ++it;
+            }
+            else
+            {
+                std::stringstream ss;
+                ss << tNames[tID];
+                if (!empty(options.matOptions.vcfFileName))
+                    ss << options.haplotypeNameSep << (hID + 1);
+                if (writeRecord(outStream, ss.str(), transcript) != 0)
+                    throw MasonIOException("Problem writing to output file.");
+            }
+
+            // Search next range.
+            itEnd = std::adjacent_find(it, instructions.end(), differentTranscript);
+            if (itEnd != instructions.end())
+                ++itEnd;
+        }
+        while (it != instructions.end());
+    }
+
+    // Append the transcript names for the given record.
+    void _appendTranscriptNames(seqan::String<unsigned> & tIDs,  // transcript ids to write out
+                                seqan::StringSet<seqan::CharString> & nameStore,
+                                seqan::NameStoreCache<seqan::StringSet<seqan::CharString> > & cache,
+                                seqan::GffRecord const & record)
+    {
+        clear(tIDs);
+
+        seqan::CharString groupNames;
+        for (unsigned i = 0; i < length(record.tagName); ++i)
+            if (record.tagName[i] == options.gffGroupBy)
+                groupNames = record.tagValue[i];
+        if (empty(groupNames))
+            return;  // Record has no group names.
+
+        // Write out the ids of the transcripts that the record belongs to as indices in nameStore.
+        unsigned idx = 0;
+        seqan::StringSet<seqan::CharString> ss;
+        splitString(ss, groupNames, ',');
+        for (unsigned i = 0; i < length(ss); ++i)
+        {
+            if (empty(ss[i]))
+                continue;
+            if (!getIdByName(nameStore, ss[i], idx, cache))
+            {
+                appendValue(tIDs, length(nameStore));
+                appendName(nameStore, ss[i], cache);
+            }
+            else
+            {
+                appendValue(tIDs, idx);
+            }
+        }
+    }
+
+    void _readFirstRecord(seqan::GffRecord & record)
+    {
+        record.rID = seqan::GffRecord::INVALID_IDX;  // uninitialized
+
+        bool found = false;
+        while (!found && !atEnd(gffStream))
+        {
+            if (readRecord(record, gffStream) != 0)
+                throw MasonIOException("Problem reading first record from GFF/GTF file.");
+            if (empty(options.gffType) || (options.gffType == record.type))
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            record.rID = seqan::maxValue<int>();
     }
 };
 

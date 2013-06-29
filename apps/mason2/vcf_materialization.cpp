@@ -247,6 +247,7 @@ bool VcfMaterializer::_materializeNext(seqan::Dna5String & seq, MethylationLevel
         seqan::String<PositionMap::TInterval> intervals;
         appendValue(intervals, PositionMap::TInterval(gi.svBeginPos, gi.svEndPos, gi));
         createIntervalTree(posMap.svIntervalTree, intervals);
+        createIntervalTree(posMap.svIntervalTreeSTL, intervals);
 
         return true;
     }

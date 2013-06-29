@@ -41,6 +41,8 @@
 // There are routines provided for 
 // ==========================================================================
 
+// TODO(holtgrew): Could put the coordinate system into types. This would add static checking on coordinate system.
+
 #ifndef SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 #define SANDBOX_MASON2_APPS_MASON2_GENOMIC_VARIANTS_H_
 
@@ -298,6 +300,11 @@ struct GenomicInterval
                 (smallVarEndPos == other.smallVarEndPos) &&
                 (strand == other.strand);
     }
+
+    bool operator!=(GenomicInterval const & other) const
+    {
+        return !(*this == other);
+    }
 };
 
 // --------------------------------------------------------------------------
@@ -321,8 +328,10 @@ public:
 
     // Gap anchors for gaps for translating between original and small variant coordinate system.
     TGapAnchors refGapAnchors, smallVarGapAnchors;
-    // The mapping from the genome with variants to
+    // The mapping from the genome with large variants to the one with small variants.
     TIntervalTree svIntervalTree;
+    // The mapping from the genome with small variants to the one with large variants.
+    TIntervalTree svIntervalTreeSTL;  // small-to-large
     // The breakpoints on the sequence with variants.
     std::set<int> svBreakpoints;
 
@@ -331,6 +340,9 @@ public:
 
     // Returns the GenomicInterval on the sequence with small variants for the given position on the sequence with SVs.
     GenomicInterval getGenomicInterval(int svPos) const;
+
+    // Returns the GenomicInterval on the sequence using a position on the small var reference.
+    GenomicInterval getGenomicIntervalSmallVarPos(int smallVarPos) const;
 
     // Translates an interval on the sequence with small variants to an interval on the original sequence.  The
     // translation is done in such a way that when the begin position is in an insertion, it is projected to the right
@@ -345,6 +357,12 @@ public:
     //
     // The interval must not overlap with a breakpoitn.
     std::pair<int, int> toSmallVarInterval(int svBeginPos, int svEndPos) const;
+
+    // Translate the interval on the original sequence into coordinates with small variants.
+    std::pair<int, int> originalToSmallVarInterval(int beginPos, int endPos) const;
+
+    // Translate the interval on the reference with small variants to the one with large variants.
+    std::pair<int, int> smallVarToLargeVarInterval(int beginPos, int endPos) const;
 
     // Reset the PositionMap with the length of the original sequence.
     void reinit(TJournalEntries const & journal);

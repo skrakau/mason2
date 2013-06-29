@@ -1371,7 +1371,8 @@ void MasonSplicingOptions::addOptions(seqan::ArgumentParser & parser) const
                                             seqan::ArgParseOption::STRING, "SEP"));
     setDefaultValue(parser, "haplotype-name-sep", "/");
 
-    addOption(parser, seqan::ArgParseOption("ig", "in-gff", "Path to input GFF or GTF file.",
+    addOption(parser, seqan::ArgParseOption("ig", "in-gff", "Path to input GFF or GTF file, must be "
+                                            "sorted by reference name.",
                                             seqan::ArgParseOption::INPUTFILE, "IN.gff"));
     setValidValues(parser, "in-gff", "gff gtf");
     setRequired(parser, "in-gff");
