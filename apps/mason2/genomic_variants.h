@@ -307,6 +307,12 @@ struct GenomicInterval
     }
 };
 
+inline bool cmpIntervalSmallVarPos(GenomicInterval const & lhs,
+                                   GenomicInterval const & rhs)
+{
+    return std::make_pair(lhs.smallVarBeginPos, lhs.smallVarEndPos) < std::make_pair(rhs.smallVarBeginPos, rhs.smallVarEndPos);
+}
+
 // --------------------------------------------------------------------------
 // Class PositionMap
 // --------------------------------------------------------------------------

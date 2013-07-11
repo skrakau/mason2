@@ -18,7 +18,7 @@ int StructuralVariantRecord::endPosition() const
 {
     if (pos == -1)
         return seqan::maxValue<int>();
-        
+
     switch (kind)
     {
         case INDEL:
@@ -41,7 +41,7 @@ bool StructuralVariantRecord::nearBreakend(int query) const
 {
     if (pos == -1)
         return false;  // invalid/sentinel has no breakends
-        
+
     switch (kind)
     {
         case INDEL:
@@ -577,15 +577,15 @@ int VariantMaterializer::_materializeLargeVariants(
     // Build the interval trees of the positionMap.
     seqan::String<PositionMap::TInterval> svIntervals, svIntervalsSTL;
     for (unsigned i = 0; i < length(intervals); ++i)
-    {
         appendValue(svIntervals, PositionMap::TInterval(
                 intervals[i].svBeginPos, intervals[i].svEndPos, intervals[i]));
-        appendValue(svIntervalsSTL, PositionMap::TInterval(
-                intervals[i].smallVarBeginPos, intervals[i].smallVarEndPos, intervals[i]));
-    }
+    for (unsigned i = 0; i < length(intervals); ++i)
+        if (intervals[i].smallVarBeginPos != -1)  // ignore insertions
+            appendValue(svIntervalsSTL, PositionMap::TInterval(
+                    intervals[i].smallVarBeginPos, intervals[i].smallVarEndPos, intervals[i]));
     createIntervalTree(positionMap.svIntervalTree, svIntervals);
     createIntervalTree(positionMap.svIntervalTreeSTL, svIntervalsSTL);
-        
+
     return 0;
 }
 
