@@ -187,7 +187,7 @@ parseCommandLine(MasonMaterializerOptions & options, int argc, char const ** arg
 
     // Define usage line and long description.
     addUsageLine(parser,
-                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-o\\fP \\IOUT.fa\\fP ");
+                 "[OPTIONS] \\fB-ir\\fP \\fIIN.fa\\fP \\fB-iv\\fP \\fIIN.vcf\\fP \\fB-o\\fP \\fIOUT.fa\\fP ");
     addDescription(parser,
                    "Apply variants from \\fIIN.vcf\\fP to \\fIIN.fa\\P and write the results to \\fIout.fa\\fP.");
 
