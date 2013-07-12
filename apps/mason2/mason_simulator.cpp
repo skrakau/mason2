@@ -155,6 +155,8 @@ public:
         // Set tag with the eason for begin unmapped: Inserted or over breakpoint.  We only reach here if the alignment
         // does not overlap with a breakpoint in the case that the alignment is in an inserted region.
         setTagValue(tagsDict, "uR", overlapsWithBreakpoint ? 'B' : 'I');
+        // Set haplotype source.
+        setTagValue(tagsDict, "oH", hID + 1);
     }
 
     // Fill the record's members for an aligned record.
