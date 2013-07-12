@@ -435,6 +435,8 @@ public:
         // Set tag with the eason for begin unmapped: Inserted or over breakpoint.  We only reach here if the alignment
         // does not overlap with a breakpoint in the case that the alignment is in an inserted region.
         setTagValue(tagsDict, "uR", overlapsWithBreakpoint ? 'B' : 'I');
+        // Flag for original haplotype.
+        setTagValue(tagsDict, "oH", hID + 1);
     }
 
     // Flip the sequence and quality in case that the record is reverse complemented.
