@@ -155,8 +155,11 @@ public:
         // Set tag with the eason for begin unmapped: Inserted or over breakpoint.  We only reach here if the alignment
         // does not overlap with a breakpoint in the case that the alignment is in an inserted region.
         setTagValue(tagsDict, "uR", overlapsWithBreakpoint ? 'B' : 'I');
-        // Set haplotype source.
-        setTagValue(tagsDict, "oH", hID + 1);
+        // Set position on original haplotype.
+        setTagValue(tagsDict, "oR", toCString(refName));  // original reference name
+        setTagValue(tagsDict, "oP", info.beginPos);       // original position
+        setTagValue(tagsDict, "oH", hID + 1);             // original haplotype
+        setTagValue(tagsDict, "oS", info.isForward ? 'F' : 'R');  // original strand
     }
 
     // Fill the record's members for an aligned record.
@@ -320,11 +323,11 @@ public:
 
         // Fill single fields depending on being aligned/unaligned record.
         if (unmappedL)
-            _fillUnaligned(recordL, seqL, qualL, overlapsWithBreakpointL);
+            _fillUnaligned(recordL, infoL, seqL, qualL, overlapsWithBreakpointL);
         else
             _fillAligned(recordL, infoL, seqL, qualL, lenL);
         if (unmappedR)
-            _fillUnaligned(recordR, seqR, qualR, overlapsWithBreakpointR);
+            _fillUnaligned(recordR, infoR, seqR, qualR, overlapsWithBreakpointR);
         else
             _fillAligned(recordR, infoR, seqR, qualR, lenR);
 
@@ -419,6 +422,7 @@ public:
 
     // Fill the record's members for an unaligned record.
     void _fillUnaligned(seqan::BamAlignmentRecord & record,
+                        SequencingSimulationInfo & infoRecord,
                         seqan::Dna5String const & seq,
                         seqan::CharString const & qual,
                         bool overlapsWithBreakpoint)
@@ -435,8 +439,11 @@ public:
         // Set tag with the eason for begin unmapped: Inserted or over breakpoint.  We only reach here if the alignment
         // does not overlap with a breakpoint in the case that the alignment is in an inserted region.
         setTagValue(tagsDict, "uR", overlapsWithBreakpoint ? 'B' : 'I');
-        // Flag for original haplotype.
-        setTagValue(tagsDict, "oH", hID + 1);
+        // Set position on original haplotype.
+        setTagValue(tagsDict, "oR", toCString(refName));  // original reference name
+        setTagValue(tagsDict, "oP", infoRecord.beginPos);       // original position
+        setTagValue(tagsDict, "oH", hID + 1);             // original haplotype
+        setTagValue(tagsDict, "oS", infoRecord.isForward ? 'F' : 'R');  // original strand
     }
 
     // Flip the sequence and quality in case that the record is reverse complemented.
@@ -634,7 +641,7 @@ public:
             // Set the sequence ids.
             _setId(ids[i], ss, fragmentIds[i / 2], 1, infos[i]);
             _setId(ids[i + 1], ss, fragmentIds[i / 2], 2, infos[i + 1]);
-            
+
             if (buildAlignments)
             {
                 // Build the alignment records themselves.
@@ -692,7 +699,10 @@ public:
         resize(quals, seqCount);
         infos.resize(seqCount);
         if (buildAlignments)
+        {
+            alignmentRecords.clear();
             alignmentRecords.resize(seqCount);
+        }
         if (options->seqOptions.simulateMatePairs)
             _simulatePairedEnd(seq, posMap, refName, refSeq, rID, hID);
         else
@@ -1025,7 +1035,7 @@ public:
     {
         std::cerr << "\n____INITIALIZING______________________________________________________________\n"
                   << "\n";
-        
+
         // Initialize VCF materialization (reference FASTA and input VCF).
         std::cerr << "Opening reference and variants file ...";
         vcfMat.init();
